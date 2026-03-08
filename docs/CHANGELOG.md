@@ -10,6 +10,16 @@
 
 ## 2026-03-08
 
+- Type: `Added`
+  - Scope: `samples`
+  - Summary: 在 `bin/samples/` 新增 `QRX-25-3F1A` 示例图片 `sample_qrx_25_3f1a.png`、布局图 `sample_qrx_25_3f1a_layout.png` 和样例清单 `sample_manifest_qrx_25_3f1a.tsv`
+  - Compatibility: `non-breaking`
+
+- Type: `Added`
+  - Scope: `docs`
+  - Summary: 新增 `docs/protocols/protocol_qrx_25_3f1a.md`，定义 `3 Finder + 1 Alignment` 方案的静区、Header、Payload 与 CRC32 规则
+  - Compatibility: `non-breaking`
+
 - Type: `Docs`
   - Scope: `docs`
   - Summary: 将 `protocol_v1_optimization_journey.md` 和 `protocol_v1_robust_108x108.md` 归档到 `docs/protocols/`，统一纳入协议与优化过程文档目录

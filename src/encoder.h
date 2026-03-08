@@ -1,6 +1,7 @@
 #pragma once
 
 #include "protocol_v1.h"
+#include "protocol_qr.h"
 
 #include <filesystem>
 #include <string>
@@ -30,5 +31,14 @@ bool WriteDemoPackage(const std::filesystem::path& input_path,
                       const std::filesystem::path& output_dir,
                       const protocol_v1::EncoderOptions& options,
                       std::string* error_message = nullptr);
+
+bool WriteStandardQrSamples(const std::filesystem::path& output_dir,
+                            const protocol_qr::EncoderOptions& options,
+                            std::string* error_message = nullptr);
+
+bool WriteStandardQrPackage(const std::filesystem::path& input_path,
+                            const std::filesystem::path& output_dir,
+                            const protocol_qr::EncoderOptions& options,
+                            std::string* error_message = nullptr);
 
 }  // namespace demo_encoder
