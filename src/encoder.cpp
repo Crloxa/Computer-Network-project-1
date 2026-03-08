@@ -117,15 +117,18 @@ bool WriteManifest(const std::filesystem::path& manifest_path,
         return false;
     }
 
-    stream << "protocol_id\tfile\tframe_seq\tpayload_len\tcrc32_payload\tcrc32_header\n";
+    stream << "file\tframe_seq\tpayload_len\tcrc32_payload\tprotocol_id\tcrc32_header\tmodule_px\tlogical_grid_size\n";
     for (std::size_t index = 0; index < frames.size(); ++index) {
-        stream << protocol_v1::kProtocolId << '\t'
-               << FrameFileName(index) << '\t'
+        stream << FrameFileName(index) << '\t'
                << frames[index].header.frame_seq << '\t'
                << frames[index].header.payload_len_bytes << '\t'
                << std::uppercase << std::hex << std::setw(8) << std::setfill('0')
-               << frames[index].header.crc32_payload << '\t'
-               << std::setw(8) << frames[index].header.crc32_header
+               << frames[index].header.crc32_payload << std::dec << '\t'
+               << protocol_v1::kProtocolId << '\t'
+               << std::uppercase << std::hex << std::setw(8) << frames[index].header.crc32_header
+               << std::dec << '\t'
+               << protocol_v1::kModulePixels << '\t'
+               << protocol_v1::kLogicalGridSize
                << std::dec << '\n';
     }
     return true;
@@ -257,6 +260,25 @@ int CellToPixel(int coordinate, int module_pixels) {
     return protocol_v1::kQuietZonePixels + coordinate * module_pixels;
 }
 
+cv::Mat BuildPreviewLogicalFrame() {
+    cv::Mat logical_frame(protocol_v1::kLogicalGridSize, protocol_v1::kLogicalGridSize, CV_8UC1,
+                          cv::Scalar(255));
+
+    DrawFinder(logical_frame, kFinderTopLeftOrigin, kFinderTopLeftOrigin, false);
+    DrawFinder(logical_frame, kFinderTopRightOrigin, kFinderTopLeftOrigin, false);
+    DrawFinder(logical_frame, kFinderTopLeftOrigin, kFinderBottomLeftOrigin, false);
+    DrawFinder(logical_frame, kFinderTopRightOrigin, kFinderTopRightOrigin, true);
+    DrawTimingPatterns(logical_frame);
+    DrawAlignment(logical_frame);
+
+    for (const GridPoint& cell : protocol_v1::PayloadCells()) {
+        const bool black = ((cell.x + cell.y) % 2) == 0;
+        SetCell(logical_frame, cell.x, cell.y, black);
+    }
+
+    return logical_frame;
+}
+
 }  // namespace
 
 std::vector<uint8_t> ReadFileBytes(const std::filesystem::path& input_path) {
@@ -368,53 +390,79 @@ cv::Mat RenderPhysicalFrame(const cv::Mat& logical_frame, int module_pixels) {
 
 cv::Mat RenderLayoutGuide(int module_pixels) {
     const FrameHeader empty_header = MakeHeader(0, {});
-    cv::Mat guide = RenderPhysicalFrame(RenderLogicalFrame(empty_header, {}), module_pixels);
+    cv::Mat layout_panel = RenderPhysicalFrame(RenderLogicalFrame(empty_header, {}), module_pixels);
+    cv::Mat sample_panel = RenderPhysicalFrame(BuildPreviewLogicalFrame(), module_pixels);
 
     const int grid_px = protocol_v1::kLogicalGridSize * module_pixels;
     const int grid_offset = (protocol_v1::kPhysicalOutputPixels - grid_px) / 2;
 
-    cv::rectangle(guide,
+    cv::rectangle(layout_panel,
                   cv::Rect(grid_offset, grid_offset, grid_px, grid_px),
                   cv::Scalar(120, 120, 120), 2);
-    cv::rectangle(guide,
+    cv::rectangle(layout_panel,
+                  cv::Rect(CellToPixel(0, module_pixels),
+                           CellToPixel(0, module_pixels),
+                           protocol_v1::kFinderReserveSizeModules * module_pixels,
+                           protocol_v1::kFinderReserveSizeModules * module_pixels),
+                  cv::Scalar(90, 90, 180), 2);
+    cv::rectangle(layout_panel,
                   cv::Rect(CellToPixel(protocol_v1::kHeaderOriginX, module_pixels),
                            CellToPixel(protocol_v1::kHeaderOriginY, module_pixels),
                            protocol_v1::kHeaderWidthModules * module_pixels,
                            protocol_v1::kHeaderHeightModules * module_pixels),
                   cv::Scalar(0, 0, 220), 2);
-    cv::rectangle(guide,
+    cv::rectangle(layout_panel,
+                  cv::Rect(CellToPixel(8, module_pixels),
+                           CellToPixel(8, module_pixels),
+                           (100 - 8) * module_pixels,
+                           (100 - 8) * module_pixels),
+                  cv::Scalar(20, 60, 220), 2);
+    cv::rectangle(layout_panel,
                   cv::Rect(CellToPixel(protocol_v1::kAlignmentOriginX, module_pixels),
                            CellToPixel(protocol_v1::kAlignmentOriginY, module_pixels),
                            protocol_v1::kAlignmentSizeModules * module_pixels,
                            protocol_v1::kAlignmentSizeModules * module_pixels),
-                  cv::Scalar(0, 160, 0), 2);
-    cv::line(guide,
+                  cv::Scalar(0, 160, 140), 2);
+    cv::line(layout_panel,
              cv::Point(CellToPixel(protocol_v1::kTimingStart, module_pixels), CellToPixel(protocol_v1::kTimingHorizontalY, module_pixels)),
              cv::Point(CellToPixel(protocol_v1::kTimingEnd + 1, module_pixels), CellToPixel(protocol_v1::kTimingHorizontalY, module_pixels)),
              cv::Scalar(255, 120, 0), 2);
-    cv::line(guide,
+    cv::line(layout_panel,
              cv::Point(CellToPixel(protocol_v1::kTimingVerticalX, module_pixels), CellToPixel(protocol_v1::kTimingStart, module_pixels)),
              cv::Point(CellToPixel(protocol_v1::kTimingVerticalX, module_pixels), CellToPixel(protocol_v1::kTimingEnd + 1, module_pixels)),
              cv::Scalar(255, 120, 0), 2);
 
-    cv::putText(guide, "V1.6-108-4F layout", cv::Point(20, 35), cv::FONT_HERSHEY_SIMPLEX,
-                0.8, cv::Scalar(20, 20, 20), 2);
-    cv::putText(guide, "Quiet zone: 6 modules (54 px)", cv::Point(20, 68), cv::FONT_HERSHEY_SIMPLEX,
-                0.65, cv::Scalar(20, 20, 20), 2);
-    cv::putText(guide, "Grid: 108x108, module=9 px", cv::Point(20, 98), cv::FONT_HERSHEY_SIMPLEX,
-                0.65, cv::Scalar(20, 20, 20), 2);
-    cv::putText(guide, "Header: 16x10 @ (8,8)", cv::Point(20, 128), cv::FONT_HERSHEY_SIMPLEX,
-                0.65, cv::Scalar(0, 0, 220), 2);
-    cv::putText(guide, "Timing H: y=24, x=8..99", cv::Point(20, 158), cv::FONT_HERSHEY_SIMPLEX,
-                0.62, cv::Scalar(255, 120, 0), 2);
-    cv::putText(guide, "Timing V: x=24, y=8..99", cv::Point(20, 188), cv::FONT_HERSHEY_SIMPLEX,
-                0.62, cv::Scalar(255, 120, 0), 2);
-    cv::putText(guide, "Alignment: 5x5 @ (88,88)", cv::Point(20, 218), cv::FONT_HERSHEY_SIMPLEX,
-                0.62, cv::Scalar(0, 160, 0), 2);
-    cv::putText(guide, "Payload max (demo): 1024 bytes", cv::Point(20, 248), cv::FONT_HERSHEY_SIMPLEX,
-                0.62, cv::Scalar(40, 40, 160), 2);
+    cv::putText(layout_panel, "Quiet zone: 6 modules (54 px)", cv::Point(18, 34), cv::FONT_HERSHEY_SIMPLEX,
+                0.6, cv::Scalar(20, 20, 20), 2);
+    cv::putText(layout_panel, "Grid: 108x108, module: 9 px (preview scaled)", cv::Point(18, 62), cv::FONT_HERSHEY_SIMPLEX,
+                0.6, cv::Scalar(20, 20, 20), 2);
+    cv::putText(layout_panel, "Finder reserve: 8x8 each", cv::Point(40, 140), cv::FONT_HERSHEY_SIMPLEX,
+                0.58, cv::Scalar(90, 90, 180), 2);
+    cv::putText(layout_panel, "Header: 16x10 (160 bits)", cv::Point(130, 140), cv::FONT_HERSHEY_SIMPLEX,
+                0.58, cv::Scalar(0, 0, 220), 2);
+    cv::putText(layout_panel, "Payload scan area: 108x108 minus reserved mask", cv::Point(140, 175), cv::FONT_HERSHEY_SIMPLEX,
+                0.58, cv::Scalar(20, 60, 220), 2);
+    cv::putText(layout_panel, "Timing H: y=24, x=8..99", cv::Point(140, 228), cv::FONT_HERSHEY_SIMPLEX,
+                0.58, cv::Scalar(255, 120, 0), 2);
+    cv::putText(layout_panel, "Timing V: x=24, y=8..99", cv::Point(140, 870), cv::FONT_HERSHEY_SIMPLEX,
+                0.58, cv::Scalar(255, 120, 0), 2);
+    cv::putText(layout_panel, "Alignment 5x5", cv::Point(690, 780), cv::FONT_HERSHEY_SIMPLEX,
+                0.58, cv::Scalar(0, 160, 140), 2);
+    cv::putText(layout_panel, "BR finder: 3x3 center inverted", cv::Point(520, 920), cv::FONT_HERSHEY_SIMPLEX,
+                0.58, cv::Scalar(20, 20, 20), 2);
+    cv::putText(layout_panel, "Theoretical payload: 1380 bytes", cv::Point(140, 202), cv::FONT_HERSHEY_SIMPLEX,
+                0.58, cv::Scalar(180, 60, 60), 2);
 
-    return guide;
+    const int canvas_width = 1640;
+    const int canvas_height = 920;
+    cv::Mat canvas(canvas_height, canvas_width, CV_8UC3, cv::Scalar(244, 244, 244));
+    layout_panel.copyTo(canvas(cv::Rect(18, 18, layout_panel.cols, layout_panel.rows)));
+    sample_panel.copyTo(canvas(cv::Rect(830, 18, sample_panel.cols, sample_panel.rows)));
+    cv::putText(canvas, "V1.6-108-4F Layout with Region Specs", cv::Point(55, 885), cv::FONT_HERSHEY_SIMPLEX,
+                0.95, cv::Scalar(10, 10, 10), 2);
+    cv::putText(canvas, "V1.6-108-4F Sample Render", cv::Point(1060, 885), cv::FONT_HERSHEY_SIMPLEX,
+                0.95, cv::Scalar(10, 10, 10), 2);
+    return canvas;
 }
 
 bool WriteProtocolSamples(const std::filesystem::path& output_dir,
@@ -446,13 +494,17 @@ bool WriteProtocolSamples(const std::filesystem::path& output_dir,
     const auto full_header = MakeHeader(0, full_payload);
     const auto short_header = MakeHeader(1, short_payload);
 
-    manifest << "protocol_id\tfile\tframe_seq\tpayload_len\tcrc32_payload\tcrc32_header\n";
-    manifest << protocol_v1::kProtocolId << "\tsample_full_frame.png\t0\t" << full_payload.size() << '\t'
+    manifest << "file\tframe_seq\tpayload_len\tcrc32_payload\tprotocol_id\tcrc32_header\tmodule_px\tlogical_grid_size\n";
+    manifest << "sample_full_frame.png\t0\t" << full_payload.size() << '\t'
              << std::uppercase << std::hex << std::setw(8) << std::setfill('0')
-             << full_header.crc32_payload << '\t' << std::setw(8) << full_header.crc32_header << std::dec << '\n';
-    manifest << protocol_v1::kProtocolId << "\tsample_short_frame.png\t1\t" << short_payload.size() << '\t'
+             << full_header.crc32_payload << std::dec << '\t'
+             << protocol_v1::kProtocolId << '\t' << std::setw(8) << full_header.crc32_header << std::dec << '\t'
+             << protocol_v1::kModulePixels << '\t' << protocol_v1::kLogicalGridSize << '\n';
+    manifest << "sample_short_frame.png\t1\t" << short_payload.size() << '\t'
              << std::uppercase << std::hex << std::setw(8) << std::setfill('0')
-             << short_header.crc32_payload << '\t' << std::setw(8) << short_header.crc32_header << std::dec << '\n';
+             << short_header.crc32_payload << std::dec << '\t'
+             << protocol_v1::kProtocolId << '\t' << std::setw(8) << short_header.crc32_header << std::dec << '\t'
+             << protocol_v1::kModulePixels << '\t' << protocol_v1::kLogicalGridSize << '\n';
     return true;
 }
 
