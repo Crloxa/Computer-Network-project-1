@@ -1,32 +1,67 @@
-#include <opencv2/opencv.hpp>
+#include "encoder.h"
+#include "protocol_v1.h"
+
+#include <exception>
+#include <filesystem>
 #include <iostream>
-#include <consoleapi2.h>
+#include <string>
 
-using namespace cv;
-using namespace std;
+namespace {
 
-int main() {
-    // 1. 创建一个 400x400 的黑色画布 (8位3通道)
-    Mat image = Mat::zeros(400, 400, CV_8UC3);
+void PrintUsage(const char* program_name) {
+    std::cout << "Usage:\n"
+              << "  " << program_name << " samples <output_dir>\n"
+              << "  " << program_name << " encode <input_image_or_file> <output_dir>\n"
+              << "  " << program_name << " demo <input_image_or_file> <output_dir>\n\n"
+              << "Commands:\n"
+              << "  samples  Write protocol_v1 sample PNGs and a layout guide.\n"
+              << "  encode   Encode a single input file into logical/physical frame PNGs and demo.mp4.\n"
+              << "  demo     Alias of encode.\n";
+}
 
-    // 2. 在图像中心画一个圆
-    // 参数：原图, 中心点, 半径, 颜色(BGR), 粗细
-    circle(image, Point(200, 200), 100, Scalar(0, 255, 255), 3);
-
-    // 3. 在图像上写字
-    putText(image, "OpenCV Config Success!", Point(50, 50),
-        FONT_HERSHEY_SIMPLEX, 0.8, Scalar(255, 255, 255), 2);
-
-    // 4. 创建窗口并显示
-    namedWindow("OpenCV Test", WINDOW_AUTOSIZE);
-    imshow("OpenCV Test", image);
-
-    cout << "OpenCV 版本: " << CV_VERSION << endl;
-    cout << "按下任意键退出程序..." << endl;
-
-    // 5. 等待按键，否则窗口会一闪而过
-    waitKey(0);
-    destroyAllWindows();
-
+int RunSamples(const std::filesystem::path& output_dir) {
+    protocol_v1::EncoderOptions options;
+    std::string error_message;
+    if (!demo_encoder::WriteProtocolSamples(output_dir, options, &error_message)) {
+        std::cerr << error_message << std::endl;
+        return 1;
+    }
+    std::cout << "Protocol samples written to: " << output_dir << std::endl;
     return 0;
+}
+
+int RunEncode(const std::filesystem::path& input_path, const std::filesystem::path& output_dir) {
+    protocol_v1::EncoderOptions options;
+    std::string error_message;
+    if (!demo_encoder::WriteDemoPackage(input_path, output_dir, options, &error_message)) {
+        std::cerr << error_message << std::endl;
+        return 1;
+    }
+    std::cout << "Demo package written to: " << output_dir << std::endl;
+    return 0;
+}
+
+}  // namespace
+
+int main(int argc, char* argv[]) {
+    try {
+        if (argc < 3) {
+            PrintUsage(argv[0]);
+            return 1;
+        }
+
+        const std::string command = argv[1];
+        if (command == "samples") {
+            return RunSamples(argv[2]);
+        }
+        if ((command == "encode" || command == "demo") && argc >= 4) {
+            return RunEncode(argv[2], argv[3]);
+        }
+
+        PrintUsage(argv[0]);
+        return 1;
+    } catch (const std::exception& error) {
+        std::cerr << "Fatal error: " << error.what() << std::endl;
+        return 1;
+    }
 }
