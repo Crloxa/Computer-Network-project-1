@@ -2,7 +2,7 @@
 
 ## 项目结构与模块组织
 - `src/` 存放当前有效的 C++ 源码，现阶段协议相关实现主要在 `protocol_v1.*`、`encoder.*` 和 `main.cpp`。
-- `docs/` 存放协议说明和对接文档，例如 `docs/protocol_v1.md`。
+- `docs/` 存放结构化文档；先看 `docs/README.md`，协议正文位于 `docs/protocols/protocol_v1.md`，集中式改动记录位于 `docs/CHANGELOG.md`。
 - `bin/samples/` 存放小体积、可复现的协议基准样例，用于解码联调和版式确认。
 - `include/`、`lib/`、`bin/` 保存已入库的 OpenCV 头文件、库文件和 DLL，供 Visual Studio 工程直接使用。
 - `ffmpeg/` 预留给本地 FFmpeg 可执行文件。
@@ -29,12 +29,15 @@
 - 当前仓库没有独立单元测试框架，提交前至少完成以下验证：
   - 工程可成功构建；
   - 能生成样例帧或 demo 视频；
-  - Header 解析、payload 长度和 CRC 行为与 `docs/protocol_v1.md` 一致。
+  - Header 解析、payload 长度和 CRC 行为与 `docs/protocols/protocol_v1.md` 一致。
 - 如果新增协议逻辑，只有在样例具有稳定参考价值时，才向 `bin/samples/` 增加少量基准文件。
 
 ## 提交与合并请求规范
 - 历史提交较混杂，后续请使用清晰、直接的祈使句式提交信息，例如：`Add CRC32 header packing for protocol v1`。
 - 尽量保持提交粒度单一：协议变更、工程配置变更、样例资产更新应尽量分开提交。
+- 任何影响协议、代码行为、构建方式、样例资产或文档结构的改动，都必须同步更新 `docs/CHANGELOG.md`。
+- 纯格式化、空白调整、错别字修正这类不影响行为的微调，可以不记 changelog。
+- 新增文档或移动文档路径时，必须同步维护 `docs/README.md`，确保文档索引可用。
 - Pull Request 至少应包含：
   - 变更摘要；
   - 影响的目录或文件；
