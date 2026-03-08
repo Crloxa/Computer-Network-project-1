@@ -5,6 +5,7 @@
 ## 阅读入口
 - 新同学或首次接手：先看 `docs/README.md`
 - 协议/编解码实现：看 `docs/protocols/protocol_v1.md`（当前有效协议为 `V1.6-108-4F`）
+- ISO 标准二维码课程方案：看 `docs/protocols/protocol_iso_qr_v2_course.md`
 - 二维码风格基线方案：看 `docs/protocols/protocol_qrx_25_3f1a.md`
 - 协议优化过程：看 `docs/protocols/protocol_v1_optimization_journey.md`
 - 鲁棒版设计草案：看 `docs/protocols/protocol_v1_robust_108x108.md`
@@ -15,6 +16,7 @@
 - `docs/README.md`：文档入口与阅读顺序
 - `docs/CHANGELOG.md`：集中式改动记录，最新在前
 - `docs/protocols/protocol_v1.md`：当前有效的 `V1.6-108-4F` 协议规范
+- `docs/protocols/protocol_iso_qr_v2_course.md`：ISO QR Version 2（3 Finder + 1 Alignment）课程实现方案
 - `docs/protocols/protocol_qrx_25_3f1a.md`：`3 Finder + 1 Alignment` 的二维码风格方案
 - `docs/protocols/protocol_v1_optimization_journey.md`：协议优化过程记录
 - `docs/protocols/protocol_v1_robust_108x108.md`：鲁棒版方案草案与参数说明

@@ -12,6 +12,16 @@
 
 - Type: `Added`
   - Scope: `samples`
+  - Summary: 在 `bin/samples/` 新增 ISO QR V2 示例 `sample_iso_qr_v2_symbol.png` 与标注图 `sample_iso_qr_v2_layout.png`
+  - Compatibility: `non-breaking`
+
+- Type: `Added`
+  - Scope: `docs`
+  - Summary: 新增 `docs/protocols/protocol_iso_qr_v2_course.md`，给出符合课程要求的 ISO QR Version 2 方案（quiet zone、3 finder、1 alignment、信息头与 CRC32）
+  - Compatibility: `non-breaking`
+
+- Type: `Added`
+  - Scope: `samples`
   - Summary: 在 `bin/samples/` 新增 `QRX-25-3F1A` 示例图片 `sample_qrx_25_3f1a.png`、布局图 `sample_qrx_25_3f1a_layout.png` 和样例清单 `sample_manifest_qrx_25_3f1a.tsv`
   - Compatibility: `non-breaking`
 

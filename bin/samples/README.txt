@@ -5,3 +5,7 @@
 - `sample_qrx_25_3f1a.png`
 - `sample_qrx_25_3f1a_layout.png`
 - `sample_manifest_qrx_25_3f1a.tsv`
+
+附加样例（ISO 标准二维码课程方案 `Version 2, 25x25`）：
+- `sample_iso_qr_v2_symbol.png`
+- `sample_iso_qr_v2_layout.png`
