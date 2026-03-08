@@ -14,7 +14,7 @@ void PrintUsage(const char* program_name) {
               << "  " << program_name << " encode <input_image_or_file> <output_dir>\n"
               << "  " << program_name << " demo <input_image_or_file> <output_dir>\n\n"
               << "Commands:\n"
-              << "  samples  Write protocol_v1 sample PNGs and a layout guide.\n"
+              << "  samples  Write V1.6-108-4F sample PNGs and a layout guide.\n"
               << "  encode   Encode a single input file into logical/physical frame PNGs and demo.mp4.\n"
               << "  demo     Alias of encode.\n";
 }
@@ -26,7 +26,7 @@ int RunSamples(const std::filesystem::path& output_dir) {
         std::cerr << error_message << std::endl;
         return 1;
     }
-    std::cout << "Protocol samples written to: " << output_dir << std::endl;
+    std::cout << "V1.6-108-4F samples written to: " << output_dir << std::endl;
     return 0;
 }
 

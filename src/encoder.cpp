@@ -14,34 +14,57 @@ namespace {
 using protocol_v1::FrameHeader;
 using protocol_v1::GridPoint;
 
-constexpr int kFinderTopLeft = protocol_v1::kQuietZoneModules;
-constexpr int kFinderTopRight = protocol_v1::kLogicalGridSize - protocol_v1::kQuietZoneModules - protocol_v1::kFinderSizeModules;
-constexpr int kFinderBottomLeft = protocol_v1::kLogicalGridSize - protocol_v1::kQuietZoneModules - protocol_v1::kFinderSizeModules;
+constexpr int kFinderTopLeftOrigin = 0;
+constexpr int kFinderTopRightOrigin = protocol_v1::kLogicalGridSize - protocol_v1::kFinderSizeModules;
+constexpr int kFinderBottomLeftOrigin = protocol_v1::kLogicalGridSize - protocol_v1::kFinderSizeModules;
+constexpr int kFinderTopRightReserveOrigin = protocol_v1::kLogicalGridSize - protocol_v1::kFinderReserveSizeModules;
+constexpr int kFinderBottomLeftReserveOrigin = protocol_v1::kLogicalGridSize - protocol_v1::kFinderReserveSizeModules;
+constexpr int kFinderBottomRightReserveOrigin = protocol_v1::kLogicalGridSize - protocol_v1::kFinderReserveSizeModules;
 
 void SetCell(cv::Mat& logical_frame, int x, int y, bool black) {
     logical_frame.at<unsigned char>(y, x) = black ? 0U : 255U;
 }
 
-void DrawFinder(cv::Mat& logical_frame, int origin_x, int origin_y) {
+bool IsStandardFinderBlack(int dx, int dy) {
+    const int max_distance = std::max(std::abs(dx - 3), std::abs(dy - 3));
+    return (max_distance == 3) || (max_distance <= 1);
+}
+
+void DrawFinder(cv::Mat& logical_frame, int origin_x, int origin_y, bool invert_center) {
     for (int dy = 0; dy < protocol_v1::kFinderSizeModules; ++dy) {
         for (int dx = 0; dx < protocol_v1::kFinderSizeModules; ++dx) {
-            const int max_distance = std::max(std::abs(dx - 3), std::abs(dy - 3));
-            const bool black = (max_distance == 3) || (max_distance <= 1);
+            bool black = IsStandardFinderBlack(dx, dy);
+            if (invert_center && dx >= 2 && dx <= 4 && dy >= 2 && dy <= 4) {
+                black = !black;
+            }
             SetCell(logical_frame, origin_x + dx, origin_y + dy, black);
         }
     }
 }
 
-void DrawTimingPatterns(cv::Mat& logical_frame) {
-    const int timing_x = protocol_v1::kInnerStart - 1;
-    const int timing_y = protocol_v1::kInnerStart - 1;
+void DrawAlignment(cv::Mat& logical_frame) {
+    for (int dy = 0; dy < protocol_v1::kAlignmentSizeModules; ++dy) {
+        for (int dx = 0; dx < protocol_v1::kAlignmentSizeModules; ++dx) {
+            const int max_distance = std::max(std::abs(dx - 2), std::abs(dy - 2));
+            const bool black = (max_distance == 2) || (max_distance == 0);
+            SetCell(logical_frame,
+                    protocol_v1::kAlignmentOriginX + dx,
+                    protocol_v1::kAlignmentOriginY + dy,
+                    black);
+        }
+    }
+}
 
-    for (int x = protocol_v1::kInnerStart; x <= protocol_v1::kInnerEnd; ++x) {
-        SetCell(logical_frame, x, timing_y, ((x - protocol_v1::kInnerStart) % 2) == 0);
+void DrawTimingPatterns(cv::Mat& logical_frame) {
+    for (int x = protocol_v1::kTimingStart; x <= protocol_v1::kTimingEnd; ++x) {
+        SetCell(logical_frame, x, protocol_v1::kTimingHorizontalY,
+                ((x - protocol_v1::kTimingStart) % 2) == 0);
     }
-    for (int y = protocol_v1::kInnerStart; y <= protocol_v1::kInnerEnd; ++y) {
-        SetCell(logical_frame, timing_x, y, ((y - protocol_v1::kInnerStart) % 2) == 0);
+    for (int y = protocol_v1::kTimingStart; y <= protocol_v1::kTimingEnd; ++y) {
+        SetCell(logical_frame, protocol_v1::kTimingVerticalX, y,
+                ((y - protocol_v1::kTimingStart) % 2) == 0);
     }
+    SetCell(logical_frame, protocol_v1::kTimingVerticalX, protocol_v1::kTimingHorizontalY, true);
 }
 
 std::string FrameFileName(std::size_t index) {
@@ -64,6 +87,25 @@ bool EnsureDirectory(const std::filesystem::path& path, std::string* error_messa
     return false;
 }
 
+uint32_t BitsToUInt32(const std::vector<bool>& bits, std::size_t start_index) {
+    uint32_t value = 0U;
+    for (std::size_t offset = 0; offset < 32U; ++offset) {
+        value <<= 1U;
+        value |= bits[start_index + offset] ? 1U : 0U;
+    }
+    return value;
+}
+
+FrameHeader MakeHeader(uint16_t frame_seq, const std::vector<uint8_t>& payload) {
+    FrameHeader header;
+    header.frame_seq = frame_seq;
+    header.payload_len_bytes = static_cast<uint16_t>(payload.size());
+    header.crc32_payload = protocol_v1::ComputeCrc32(payload);
+    const std::vector<bool> packed_bits = protocol_v1::PackHeaderBits(header);
+    header.crc32_header = BitsToUInt32(packed_bits, 128U);
+    return header;
+}
+
 bool WriteManifest(const std::filesystem::path& manifest_path,
                    const std::vector<EncodedFrame>& frames,
                    std::string* error_message) {
@@ -75,13 +117,16 @@ bool WriteManifest(const std::filesystem::path& manifest_path,
         return false;
     }
 
-    stream << "file\tframe_seq\tpayload_len\tcrc32\n";
+    stream << "protocol_id\tfile\tframe_seq\tpayload_len\tcrc32_payload\tcrc32_header\n";
     for (std::size_t index = 0; index < frames.size(); ++index) {
-        stream << FrameFileName(index) << '\t'
+        stream << protocol_v1::kProtocolId << '\t'
+               << FrameFileName(index) << '\t'
                << frames[index].header.frame_seq << '\t'
                << frames[index].header.payload_len_bytes << '\t'
                << std::uppercase << std::hex << std::setw(8) << std::setfill('0')
-               << frames[index].header.crc32_payload << std::dec << '\n';
+               << frames[index].header.crc32_payload << '\t'
+               << std::setw(8) << frames[index].header.crc32_header
+               << std::dec << '\n';
     }
     return true;
 }
@@ -90,10 +135,17 @@ bool TryWriteVideoWithOpenCv(const std::vector<EncodedFrame>& frames,
                              const std::filesystem::path& temp_path,
                              const protocol_v1::EncoderOptions& options,
                              std::string* error_message) {
-    const int frame_size = options.logical_grid_size * options.module_pixels;
+    if (frames.empty()) {
+        if (error_message != nullptr) {
+            *error_message = "No frames were generated for video output.";
+        }
+        return false;
+    }
+
+    const cv::Size frame_size(frames.front().physical_frame.cols, frames.front().physical_frame.rows);
     cv::VideoWriter writer;
     writer.open(temp_path.string(), cv::VideoWriter::fourcc('m', 'p', '4', 'v'),
-                static_cast<double>(options.fps), cv::Size(frame_size, frame_size), true);
+                static_cast<double>(options.fps), frame_size, true);
     if (!writer.isOpened()) {
         if (error_message != nullptr) {
             *error_message = "OpenCV VideoWriter failed to open output: " + temp_path.string();
@@ -195,12 +247,14 @@ void WriteSampleFrame(const std::filesystem::path& path,
                       uint16_t frame_seq,
                       const std::vector<uint8_t>& payload,
                       int module_pixels) {
-    const FrameHeader header{frame_seq,
-                             static_cast<uint16_t>(payload.size()),
-                             protocol_v1::ComputeCrc32(payload)};
+    const FrameHeader header = MakeHeader(frame_seq, payload);
     const cv::Mat logical = RenderLogicalFrame(header, payload);
     const cv::Mat physical = RenderPhysicalFrame(logical, module_pixels);
     cv::imwrite(path.string(), physical);
+}
+
+int CellToPixel(int coordinate, int module_pixels) {
+    return protocol_v1::kQuietZonePixels + coordinate * module_pixels;
 }
 
 }  // namespace
@@ -229,10 +283,9 @@ std::vector<EncodedFrame> EncodeBytesToFrames(const std::vector<uint8_t>& bytes,
     std::vector<EncodedFrame> frames;
 
     if (bytes.empty()) {
-        const FrameHeader header{0, 0, 0};
         EncodedFrame frame;
-        frame.header = header;
-        frame.logical_frame = RenderLogicalFrame(header, {});
+        frame.header = MakeHeader(0, {});
+        frame.logical_frame = RenderLogicalFrame(frame.header, {});
         frame.physical_frame = RenderPhysicalFrame(frame.logical_frame, options.module_pixels);
         frames.push_back(frame);
         return frames;
@@ -243,15 +296,10 @@ std::vector<EncodedFrame> EncodeBytesToFrames(const std::vector<uint8_t>& bytes,
         const std::size_t payload_size = std::min<std::size_t>(remaining, static_cast<std::size_t>(chunk_size));
         std::vector<uint8_t> payload(bytes.begin() + static_cast<std::ptrdiff_t>(offset),
                                      bytes.begin() + static_cast<std::ptrdiff_t>(offset + payload_size));
-        const FrameHeader header{
-            static_cast<uint16_t>(frames.size() & 0xFFFFU),
-            static_cast<uint16_t>(payload.size()),
-            protocol_v1::ComputeCrc32(payload),
-        };
 
         EncodedFrame frame;
-        frame.header = header;
-        frame.payload = std::move(payload);
+        frame.payload = payload;
+        frame.header = MakeHeader(static_cast<uint16_t>(frames.size() & 0xFFFFU), frame.payload);
         frame.logical_frame = RenderLogicalFrame(frame.header, frame.payload);
         frame.physical_frame = RenderPhysicalFrame(frame.logical_frame, options.module_pixels);
         frames.push_back(std::move(frame));
@@ -262,21 +310,27 @@ std::vector<EncodedFrame> EncodeBytesToFrames(const std::vector<uint8_t>& bytes,
 
 cv::Mat RenderLogicalFrame(const protocol_v1::FrameHeader& header, const std::vector<uint8_t>& payload) {
     if (payload.size() > static_cast<std::size_t>(protocol_v1::kMaxPayloadBytes)) {
-        throw std::runtime_error("Payload exceeds v1 limit of 1024 bytes.");
+        throw std::runtime_error("Payload exceeds V1.6 limit of 1024 bytes.");
     }
 
     cv::Mat logical_frame(protocol_v1::kLogicalGridSize, protocol_v1::kLogicalGridSize, CV_8UC1,
                           cv::Scalar(255));
 
-    DrawFinder(logical_frame, kFinderTopLeft, kFinderTopLeft);
-    DrawFinder(logical_frame, kFinderTopRight, kFinderTopLeft);
-    DrawFinder(logical_frame, kFinderTopLeft, kFinderBottomLeft);
+    DrawFinder(logical_frame, kFinderTopLeftOrigin, kFinderTopLeftOrigin, false);
+    DrawFinder(logical_frame, kFinderTopRightOrigin, kFinderTopLeftOrigin, false);
+    DrawFinder(logical_frame, kFinderTopLeftOrigin, kFinderBottomLeftOrigin, false);
+    DrawFinder(logical_frame, kFinderTopRightOrigin, kFinderTopRightOrigin, true);
     DrawTimingPatterns(logical_frame);
+    DrawAlignment(logical_frame);
 
     const std::vector<bool> header_bits = protocol_v1::PackHeaderBits(header);
+    if (header_bits.size() != static_cast<std::size_t>(protocol_v1::kHeaderBits)) {
+        throw std::runtime_error("Packed header does not match the required 160-bit size.");
+    }
+
     std::size_t bit_index = 0;
-    for (int row = 0; row < protocol_v1::kHeaderSizeModules; ++row) {
-        for (int col = 0; col < protocol_v1::kHeaderSizeModules; ++col) {
+    for (int row = 0; row < protocol_v1::kHeaderHeightModules; ++row) {
+        for (int col = 0; col < protocol_v1::kHeaderWidthModules; ++col) {
             const int x = protocol_v1::kHeaderOriginX + col;
             const int y = protocol_v1::kHeaderOriginY + row;
             SetCell(logical_frame, x, y, header_bits[bit_index++]);
@@ -297,41 +351,68 @@ cv::Mat RenderLogicalFrame(const protocol_v1::FrameHeader& header, const std::ve
 }
 
 cv::Mat RenderPhysicalFrame(const cv::Mat& logical_frame, int module_pixels) {
-    cv::Mat physical_frame;
-    cv::resize(logical_frame, physical_frame,
+    cv::Mat body_frame;
+    cv::resize(logical_frame, body_frame,
                cv::Size(logical_frame.cols * module_pixels, logical_frame.rows * module_pixels),
                0.0, 0.0, cv::INTER_NEAREST);
-    cv::cvtColor(physical_frame, physical_frame, cv::COLOR_GRAY2BGR);
+    cv::cvtColor(body_frame, body_frame, cv::COLOR_GRAY2BGR);
+
+    cv::Mat physical_frame(protocol_v1::kPhysicalOutputPixels,
+                           protocol_v1::kPhysicalOutputPixels,
+                           CV_8UC3,
+                           cv::Scalar(255, 255, 255));
+    const int offset = (protocol_v1::kPhysicalOutputPixels - body_frame.cols) / 2;
+    body_frame.copyTo(physical_frame(cv::Rect(offset, offset, body_frame.cols, body_frame.rows)));
     return physical_frame;
 }
 
 cv::Mat RenderLayoutGuide(int module_pixels) {
-    const FrameHeader empty_header{};
-    const cv::Mat guide_base = RenderPhysicalFrame(RenderLogicalFrame(empty_header, {}), module_pixels);
-    cv::Mat guide;
-    guide_base.copyTo(guide);
+    const FrameHeader empty_header = MakeHeader(0, {});
+    cv::Mat guide = RenderPhysicalFrame(RenderLogicalFrame(empty_header, {}), module_pixels);
 
-    const int inner_px = protocol_v1::kInnerStart * module_pixels;
-    const int inner_size_px = protocol_v1::kInnerSize * module_pixels;
-    const int header_px = protocol_v1::kHeaderSizeModules * module_pixels;
+    const int grid_px = protocol_v1::kLogicalGridSize * module_pixels;
+    const int grid_offset = (protocol_v1::kPhysicalOutputPixels - grid_px) / 2;
 
     cv::rectangle(guide,
-                  cv::Rect(inner_px, inner_px, inner_size_px, inner_size_px),
-                  cv::Scalar(0, 180, 0), 3);
+                  cv::Rect(grid_offset, grid_offset, grid_px, grid_px),
+                  cv::Scalar(120, 120, 120), 2);
     cv::rectangle(guide,
-                  cv::Rect(protocol_v1::kHeaderOriginX * module_pixels,
-                           protocol_v1::kHeaderOriginY * module_pixels,
-                           header_px, header_px),
-                  cv::Scalar(255, 120, 0), 3);
+                  cv::Rect(CellToPixel(protocol_v1::kHeaderOriginX, module_pixels),
+                           CellToPixel(protocol_v1::kHeaderOriginY, module_pixels),
+                           protocol_v1::kHeaderWidthModules * module_pixels,
+                           protocol_v1::kHeaderHeightModules * module_pixels),
+                  cv::Scalar(0, 0, 220), 2);
+    cv::rectangle(guide,
+                  cv::Rect(CellToPixel(protocol_v1::kAlignmentOriginX, module_pixels),
+                           CellToPixel(protocol_v1::kAlignmentOriginY, module_pixels),
+                           protocol_v1::kAlignmentSizeModules * module_pixels,
+                           protocol_v1::kAlignmentSizeModules * module_pixels),
+                  cv::Scalar(0, 160, 0), 2);
+    cv::line(guide,
+             cv::Point(CellToPixel(protocol_v1::kTimingStart, module_pixels), CellToPixel(protocol_v1::kTimingHorizontalY, module_pixels)),
+             cv::Point(CellToPixel(protocol_v1::kTimingEnd + 1, module_pixels), CellToPixel(protocol_v1::kTimingHorizontalY, module_pixels)),
+             cv::Scalar(255, 120, 0), 2);
+    cv::line(guide,
+             cv::Point(CellToPixel(protocol_v1::kTimingVerticalX, module_pixels), CellToPixel(protocol_v1::kTimingStart, module_pixels)),
+             cv::Point(CellToPixel(protocol_v1::kTimingVerticalX, module_pixels), CellToPixel(protocol_v1::kTimingEnd + 1, module_pixels)),
+             cv::Scalar(255, 120, 0), 2);
 
-    cv::putText(guide, "108x108 logical grid", cv::Point(20, 40), cv::FONT_HERSHEY_SIMPLEX,
-                0.9, cv::Scalar(40, 40, 200), 2);
-    cv::putText(guide, "Inner area: 92x92 cells", cv::Point(20, 80), cv::FONT_HERSHEY_SIMPLEX,
-                0.8, cv::Scalar(0, 150, 0), 2);
-    cv::putText(guide, "Header: 8x8 cells @ (12,12)", cv::Point(20, 120), cv::FONT_HERSHEY_SIMPLEX,
-                0.8, cv::Scalar(255, 120, 0), 2);
-    cv::putText(guide, "Payload scan: row-major, skip header", cv::Point(20, 160), cv::FONT_HERSHEY_SIMPLEX,
-                0.8, cv::Scalar(80, 80, 80), 2);
+    cv::putText(guide, "V1.6-108-4F layout", cv::Point(20, 35), cv::FONT_HERSHEY_SIMPLEX,
+                0.8, cv::Scalar(20, 20, 20), 2);
+    cv::putText(guide, "Quiet zone: 6 modules (54 px)", cv::Point(20, 68), cv::FONT_HERSHEY_SIMPLEX,
+                0.65, cv::Scalar(20, 20, 20), 2);
+    cv::putText(guide, "Grid: 108x108, module=9 px", cv::Point(20, 98), cv::FONT_HERSHEY_SIMPLEX,
+                0.65, cv::Scalar(20, 20, 20), 2);
+    cv::putText(guide, "Header: 16x10 @ (8,8)", cv::Point(20, 128), cv::FONT_HERSHEY_SIMPLEX,
+                0.65, cv::Scalar(0, 0, 220), 2);
+    cv::putText(guide, "Timing H: y=24, x=8..99", cv::Point(20, 158), cv::FONT_HERSHEY_SIMPLEX,
+                0.62, cv::Scalar(255, 120, 0), 2);
+    cv::putText(guide, "Timing V: x=24, y=8..99", cv::Point(20, 188), cv::FONT_HERSHEY_SIMPLEX,
+                0.62, cv::Scalar(255, 120, 0), 2);
+    cv::putText(guide, "Alignment: 5x5 @ (88,88)", cv::Point(20, 218), cv::FONT_HERSHEY_SIMPLEX,
+                0.62, cv::Scalar(0, 160, 0), 2);
+    cv::putText(guide, "Payload max (demo): 1024 bytes", cv::Point(20, 248), cv::FONT_HERSHEY_SIMPLEX,
+                0.62, cv::Scalar(40, 40, 160), 2);
 
     return guide;
 }
@@ -362,13 +443,16 @@ bool WriteProtocolSamples(const std::filesystem::path& output_dir,
 
     const auto full_payload = MakeSamplePayload(protocol_v1::kMaxPayloadBytes, 0x11U);
     const auto short_payload = MakeSamplePayload(173, 0x7AU);
-    manifest << "file\tframe_seq\tpayload_len\tcrc32\n";
-    manifest << "sample_full_frame.png\t0\t" << full_payload.size() << '\t'
+    const auto full_header = MakeHeader(0, full_payload);
+    const auto short_header = MakeHeader(1, short_payload);
+
+    manifest << "protocol_id\tfile\tframe_seq\tpayload_len\tcrc32_payload\tcrc32_header\n";
+    manifest << protocol_v1::kProtocolId << "\tsample_full_frame.png\t0\t" << full_payload.size() << '\t'
              << std::uppercase << std::hex << std::setw(8) << std::setfill('0')
-             << protocol_v1::ComputeCrc32(full_payload) << std::dec << '\n';
-    manifest << "sample_short_frame.png\t1\t" << short_payload.size() << '\t'
+             << full_header.crc32_payload << '\t' << std::setw(8) << full_header.crc32_header << std::dec << '\n';
+    manifest << protocol_v1::kProtocolId << "\tsample_short_frame.png\t1\t" << short_payload.size() << '\t'
              << std::uppercase << std::hex << std::setw(8) << std::setfill('0')
-             << protocol_v1::ComputeCrc32(short_payload) << std::dec << '\n';
+             << short_header.crc32_payload << '\t' << std::setw(8) << short_header.crc32_header << std::dec << '\n';
     return true;
 }
 
@@ -409,10 +493,13 @@ bool WriteDemoPackage(const std::filesystem::path& input_path,
     }
 
     std::ofstream(output_dir / "input_info.txt")
+        << "protocol_id=" << protocol_v1::kProtocolId << '\n'
         << "input_path=" << input_path.string() << '\n'
         << "input_bytes=" << input_bytes.size() << '\n'
         << "logical_frames=" << frames.size() << '\n'
+        << "logical_grid_size=" << options.logical_grid_size << '\n'
         << "module_px=" << options.module_pixels << '\n'
+        << "quiet_zone_modules=" << protocol_v1::kQuietZoneModules << '\n'
         << "fps=" << options.fps << '\n'
         << "repeat=" << options.repeat << '\n';
 
