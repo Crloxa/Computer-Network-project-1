@@ -11,6 +11,11 @@
 ## 2026-03-09
 
 - Type: `Changed`
+  - Scope: `docs`
+  - Summary: 将 `protocol_iso_qr_v2_course.md` 从方案摘要补全为工程交接文档，覆盖模块职责、公共接口、输出文件字段、失败模式、排障路径和已知限制
+  - Compatibility: `non-breaking`
+
+- Type: `Changed`
   - Scope: `protocol`
   - Summary: ISO 主线默认 profile 从 `iso145` 调整为 `iso133`（`Version 29 / 133x133`），并新增 `ECC=H` 支持以对齐组内实测档位与更高拍摄容错需求
   - Compatibility: `breaking`

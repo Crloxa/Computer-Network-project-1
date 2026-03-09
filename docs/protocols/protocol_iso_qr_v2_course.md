@@ -1,101 +1,517 @@
-# ISO 标准二维码主线方案
+# ISO QR 主线设计与实现说明
 
-## 1. 目标
-- 当前仓库主线改为真实标准 `ISO/IEC 18004 QR Code Model 2`。
-- 传输效果向“大尺寸、可拍屏、可透视拉正”的展示方式靠拢，但不修改 QR 本体标准。
-- QR 本体以 OpenCV 标准编码/解码能力为实现基础，外围允许存在自定义 carrier 和定位标记。
+## 1. 文档定位
 
-## 2. 尺寸与版本策略
-- ISO QR 逻辑边长必须满足 `21 + 4n`，不能做严格 `108x108`。
-- “108 左右”只作为经验参考；若必须靠近该尺寸，只能使用最近合法标准档 `109x109`。
-- 当前支持四档 profile：
-  - `iso109`：`Version 23`，`109 x 109`
-  - `iso133`：`Version 29`，`133 x 133`
-  - `iso145`：`Version 32`，`145 x 145`
-  - `iso177`：`Version 40`，`177 x 177`
-- 默认 profile：`iso133`
-- 默认纠错等级：`ECC = Q`
-- 对照实验档位：`ECC = M`
-- 弱拍摄条件可切到：`ECC = H`
-- 推荐工作点：
-  - 常规：`Version 29 + ECC Q + canvas 1440`
-  - 4K 录制：`Version 29 + ECC Q + canvas 2160`
-  - 噪声更大时：`Version 29 + ECC H + canvas 2160`
+本文档是当前主线实现的工程交接文档，覆盖：
+- 设计目标与边界
+- 协议与参数接口
+- 编码、载体、视频、解码与重组流程
+- 输出文件与调试产物
+- 失败模式、排障路径与已知限制
 
-## 3. 标准二维码本体
-- 保持标准 quiet zone，不在 QR 本体上叠加任何非标准图形。
-- Finder、alignment、timing、format、mask 与 RS 纠错均由标准 QR 机制决定。
-- 当前实现直接使用标准 QR 自带的 Reed-Solomon 纠错等级，不额外改造 QR 本体纠错结构。
-- 编码模式固定使用 `Byte mode`。
-- QR 本体只承载应用层字节流，不承载 carrier 额外定位信息。
+本文档描述的对象是当前仓库中的 ISO QR 主线实现，不包含旧 `V1.6-108-4F` 自定义协议的扩展设计。旧协议仅保留在 `protocol_v1.md` 作为历史参考。
 
-## 4. 应用层帧格式
-- 单帧字节布局：
-  1. `header`：8 bytes
-  2. `payload`：N bytes
-  3. `crc32`：4 bytes，大端
-- Header 固定字段：
-  - `protocol_id`：1 byte，固定 `0xA2`
-  - `protocol_ver`：1 byte，固定 `0x01`
-  - `frame_seq`：2 bytes，大端
-  - `total_frames`：2 bytes，大端
-  - `payload_len`：2 bytes，大端
-- `crc32` 覆盖范围：`header + payload`
-- `CRC32` 规则：
-  - 多项式：`0xEDB88320`
-  - 初始值：`0xFFFFFFFF`
-  - 最终异或：`0xFFFFFFFF`
+## 2. 目标与边界
 
-## 5. Carrier 设计
-- 视频传输帧不是“裸 QR 图”，而是“中心标准 QR + 外围 carrier”。
-- carrier 规则：
-  - 白底正方形画布
-  - 中央放置标准 QR
-  - 四角可放非数据定位标记
-  - 右下角定位标记允许做方向区分
-- 注意：这些定位标记不属于 QR 本体，只用于视频链中的定位、透视矫正和裁切。
+### 2.1 目标
 
-## 6. 编码流程
-1. 读取输入文件为字节流。
-2. 根据 profile 和 ECC，用标准编码器可接受的最大字节数自动探测单帧容量。
-3. 将原文件切片为多帧，写入 `header + payload + crc32`。
-4. 使用标准 QR 编码器生成单帧 QR。
-5. 将 QR 放入 carrier 画布中央，并绘制外围定位标记。
-6. 输出逐帧 PNG，并合成为 `demo.mp4`。
+- 使用真实标准 `ISO/IEC 18004 QR Code Model 2` 承载单帧数据。
+- 保持 QR 本体标准不变，只在外围增加 carrier 与定位标记，以适配视频录制、拍屏和透视矫正。
+- 提供统一的命令行入口，覆盖样例生成、编码打包、视频解码和文件重组。
+- 让接手该仓库的开发者可以只靠本文档理解参数、流程、产物和调试方法。
 
-## 7. 解码流程
-1. 从视频或帧目录读取图像。
-2. 优先直接对整帧做标准 QR 检测和解码。
-3. 若直接失败，则使用外围 carrier 标记做透视矫正，再裁出中央 QR 区。
-4. 对解码得到的字节流解析 `header + payload + crc32`。
-5. 通过 `frame_seq`、`total_frames` 和 `crc32` 去重、校验、重组。
-6. 输出 `output.bin`、逐帧解析报告和调试图片。
+### 2.2 非目标
 
-## 8. CLI
-- `Project1 samples <output_dir>`
-- `Project1 encode <input_file> <output_dir> [--profile iso109|iso133|iso145|iso177] [--ecc M|Q|H] [--canvas px] [--fps n] [--repeat n]`
-- `Project1 decode <input_video_or_frame_dir> <output_dir> [--profile iso109|iso133|iso145|iso177] [--ecc M|Q|H] [--canvas px]`
+- 不修改标准 QR 的 finder、alignment、timing、mask、format、quiet zone 和内部 RS 纠错结构。
+- 不在当前主线中实现彩色 payload 或非标准二维码版式。
+- 不在当前主线中实现跨帧 FEC / fountain code / 额外 RS 冗余。
+- 不把旧阶段样例 PNG 当作当前主线协议基准。
 
-## 9. 输出产物
-- 编码：
-  - `frames/qr/frame_XXXXX.png`
-  - `frames/carrier/frame_XXXXX.png`
-  - `frame_manifest.tsv`
-  - `input_info.txt`
-  - `demo.mp4`
-  - `video_status.txt`
-  - `protocol_samples/sample_capacity.tsv`
-- 解码：
-  - `output.bin`
-  - `decode_report.tsv`
-  - `decode_summary.txt`
-  - `missing_frames.txt`（仅缺帧时）
-  - `decode_debug/source/`
-  - `decode_debug/warped/`
-  - `decode_debug/qr_crop/`
+## 3. 核心设计决策
 
-## 10. 兼容性说明
-- 当前主线不再扩展旧的 `V1.6-108-4F` 自定义协议。
-- 当前默认实现不再以 `Version 32 / 145x145` 为主，而是按组内实测基线切到 `Version 29 / 133x133`。
-- 若后续需要“颜色承载额外 bit”的彩色协议，应另开新协议，不应修改本方案的 ISO QR 本体定义。
-- 若后续需要抗丢帧增强，应在应用层单独增加跨帧冗余；不要把它和标准 QR 内部 RS 纠错混为一谈。
+### 3.1 为什么主线切到标准 ISO QR
+
+- 与 `examples` 中的自定义版式相比，标准 ISO QR 更容易复用 OpenCV 编码与检测能力。
+- 后续对鲁棒性的优化可以集中在外围 carrier、拍摄条件和参数选择，不必重复实现二维码本体规则。
+- 课程展示可以保留“大尺寸、可拍摄、可透视拉正”的视觉效果，同时避免偏离标准。
+
+### 3.2 为什么默认档位是 `Version 29 / 133x133 + ECC Q`
+
+- `108x108` 不是合法 ISO QR 尺寸；标准尺寸必须满足 `21 + 4n`。
+- 组内反馈表明 `Version 29 / 133x133` 的信息量与可识别性更平衡，适合作为默认工作点。
+- `ECC Q` 在容量和拍摄容错之间更均衡，适合默认配置。
+- 当录制链路支持 4K 时，优先通过增加 `canvas` 获得更高采样密度，而不是改造 QR 本体。
+
+## 4. 术语
+
+- `profile`：预设的 ISO QR 版本档位，例如 `iso133`。
+- `logical grid`：二维码逻辑边长，单位是 module，例如 `133`。
+- `module`：二维码最小黑白单元。
+- `quiet zone`：二维码四周保留的标准静区。
+- `carrier`：外围白底画布和四角定位标记，不属于 QR 本体。
+- `canvas`：carrier 输出画布的像素边长，例如 `1440` 或 `2160`。
+
+## 5. 模块划分
+
+当前实现的职责分布如下：
+
+### 5.1 `protocol_iso.*`
+
+负责协议与参数模型：
+- `ProfileId`
+- `ErrorCorrection`
+- `Profile`
+- `FrameHeader`
+- `EncoderOptions`
+- header 打包与解析
+- CRC32 计算
+- profile/ecc 字符串解析
+
+### 5.2 `encoder.*`
+
+负责主流程实现：
+- 标准 QR 编码
+- carrier 布局生成
+- 样例输出
+- 输入文件切帧
+- 视频封装
+- carrier 透视拉正
+- QR 解码与重组
+- 调试产物和报告文件输出
+
+### 5.3 `main.cpp`
+
+负责 CLI：
+- 参数解析
+- 默认值使用
+- `samples / encode / decode` 命令分发
+
+## 6. 公共接口与默认值
+
+### 6.1 Profile
+
+当前支持的 profile：
+
+| 名称 | Version | logical grid | 角色 |
+| --- | --- | --- | --- |
+| `iso109` | 23 | 109 | 接近 “108 左右” 的实验性档位 |
+| `iso133` | 29 | 133 | 默认主线档位 |
+| `iso145` | 32 | 145 | 更高容量对照档 |
+| `iso177` | 40 | 177 | 极限压力档 |
+
+默认 profile：
+- `iso133`
+
+### 6.2 ECC
+
+当前支持：
+- `M`
+- `Q`
+- `H`
+
+默认值：
+- `Q`
+
+推荐选择：
+- 常规录屏或稳定拍摄：`Q`
+- 噪声更大或解码失败较多：`H`
+- 容量优先对照实验：`M`
+
+### 6.3 `FrameHeader`
+
+固定 8 bytes，大端：
+
+| 字段 | 大小 | 说明 |
+| --- | --- | --- |
+| `protocol_id` | 1 byte | 固定 `0xA2` |
+| `protocol_version` | 1 byte | 固定 `0x01` |
+| `frame_seq` | 2 bytes | 当前帧序号 |
+| `total_frames` | 2 bytes | 总帧数 |
+| `payload_len` | 2 bytes | 当前 payload 字节数 |
+
+单帧字节布局：
+1. `header`
+2. `payload`
+3. `crc32`
+
+固定开销：
+- `kHeaderBytes = 8`
+- `kCrcBytes = 4`
+- `kFrameOverheadBytes = 12`
+
+CRC32 规则：
+- 覆盖 `header + payload`
+- 多项式 `0xEDB88320`
+- 初始值 `0xFFFFFFFF`
+- 最终异或 `0xFFFFFFFF`
+
+### 6.4 `EncoderOptions`
+
+默认值如下：
+
+| 字段 | 默认值 | 说明 |
+| --- | --- | --- |
+| `profile_id` | `iso133` | 主线默认档位 |
+| `error_correction` | `Q` | 默认纠错级别 |
+| `canvas_pixels` | `1440` | 默认 carrier 边长 |
+| `fps` | `60` | 视频输出帧率 |
+| `repeat` | `3` | 每个逻辑帧重复写入次数 |
+| `enable_carrier_markers` | `true` | 是否绘制四角定位标记 |
+
+参数校验规则：
+- `--canvas >= 720`
+- `--fps > 0`
+- `--repeat > 0`
+- `--markers` 只接受 `on/off`
+
+## 7. CLI 契约
+
+### 7.1 `samples`
+
+```bash
+Project1 samples <output_dir> [--profile iso109|iso133|iso145|iso177] [--ecc M|Q|H] [--canvas px]
+```
+
+作用：
+- 生成每个 profile 的样例 QR 图、carrier 图和布局图
+- 输出容量矩阵 `sample_capacity.tsv`
+
+### 7.2 `encode`
+
+```bash
+Project1 encode <input_file> <output_dir> [--profile iso109|iso133|iso145|iso177] [--ecc M|Q|H] [--canvas px] [--fps n] [--repeat n]
+```
+
+作用：
+- 读取单个输入文件
+- 切帧并生成标准 QR
+- 输出 QR 帧、carrier 帧、manifest、样例和视频
+
+### 7.3 `decode`
+
+```bash
+Project1 decode <input_video_or_frame_dir> <output_dir> [--profile iso109|iso133|iso145|iso177] [--ecc M|Q|H] [--canvas px]
+```
+
+作用：
+- 从视频或帧目录读取图像
+- 执行 QR 解码、透视拉正、header 校验和重组
+- 输出 `output.bin` 和调试报告
+
+## 8. 编码设计
+
+### 8.1 容量探测
+
+单帧净荷不是写死值，而是运行时探测：
+- 用当前 `profile + ecc` 构造测试字节流
+- 通过二分搜索找到 `QRCodeEncoder` 仍可接受的最大 frame bytes
+- 可用 payload 上限 = `max_frame_bytes - 12`
+
+这样做的原因：
+- 避免手工硬编码每帧容量
+- 让同一套代码自然适配 `M/Q/H` 和不同 version
+
+### 8.2 标准 QR 生成
+
+QR 本体使用 OpenCV `QRCodeEncoder`：
+- `version = profile.version`
+- `correction_level = M/Q/H`
+- `mode = Byte mode`
+
+本体规则：
+- 保持标准 quiet zone
+- 不叠加额外花纹
+- 不在 QR 本体内部放 carrier 标记
+
+### 8.3 Carrier 布局
+
+carrier 是在标准 QR 外层额外构造的白底画布。布局参数由 `canvas_pixels` 推导：
+
+- `marker_margin = max(24, canvas / 28)`
+- `marker_size = max(72, canvas / 9)`
+- `qr_size = max(720, canvas * 0.78)`
+- `qr_x = qr_y = (canvas - qr_size) / 2`
+
+四角规则：
+- 左上、右上、左下使用相同 marker
+- 右下使用反相中心 marker，用于方向区分
+
+### 8.4 渲染尺度约束
+
+编码后会检查：
+
+```text
+module_pixels = qr_size / qr_frame.cols
+```
+
+当前阈值：
+- `module_pixels >= 4.0`
+
+若阈值不足，则直接报错，避免生成在拍摄场景下几乎不可用的码图。
+
+### 8.5 视频输出
+
+视频封装流程：
+1. 用 OpenCV `VideoWriter` 先写 `demo_temp.mp4`
+2. 每个逻辑帧按 `repeat` 次数重复写入
+3. 若检测到可用 `ffmpeg`，再转码为 `yuv420p` 输出 `demo.mp4`
+4. 若 `ffmpeg` 不可用，则保留 OpenCV 输出的 MP4，并记录 `video_status.txt`
+
+## 9. 解码设计
+
+### 9.1 输入源
+
+支持两种解码输入：
+- 帧目录
+- 视频文件
+
+视频路径下会先用 `VideoCapture` 逐帧读取。
+
+### 9.2 两段式检测
+
+当前检测链分两步：
+
+1. 直接对整帧做标准 QR 解码
+2. 直接失败时，再使用 carrier 标记做拉正后解码
+
+具体实现：
+- 直接解码：`QRCodeDetector`
+- fallback：`QRCodeDetectorAruco`
+
+### 9.3 Carrier 拉正
+
+拉正步骤：
+- 灰度化
+- Otsu 二值化并反色
+- 找轮廓
+- 依据面积、宽高比和四象限位置选出四个 marker
+- 求透视变换矩阵
+- 拉正整张 carrier
+- 从中心裁出 QR 区再做二次解码
+
+当前启发式条件：
+- 轮廓面积至少为整帧面积的 `0.0015`
+- 候选矩形宽高都要大于 `20`
+- 宽高比不能大于 `1.35`
+
+### 9.4 Header 解析与重组
+
+解码成功后执行：
+- 解析 `FrameHeader`
+- 校验协议 id / version
+- 校验 `payload_len`
+- 校验 CRC32
+- 读取 `frame_seq / total_frames`
+
+重组规则：
+- 首次成功帧确定 `expected_total_frames`
+- 若后续帧 `total_frames` 不一致，则记为失败
+- 同一 `frame_seq` 仅收第一份 payload，后续重复帧跳过
+- 最终按 `frame_seq` 从小到大拼接得到 `output.bin`
+
+缺帧行为：
+- 若存在缺失序号，写 `missing_frames.txt`
+- 同时返回错误，不输出“完整解码成功”的结果
+
+## 10. 输出产物
+
+### 10.1 `samples`
+
+输出：
+- `sample_<profile>_symbol.png`
+- `sample_<profile>_carrier.png`
+- `sample_<profile>_layout.png`
+- `sample_manifest.tsv`
+- `sample_capacity.tsv`
+
+`sample_manifest.tsv` 列：
+
+| 列名 | 说明 |
+| --- | --- |
+| `file` | 样例 QR 文件名 |
+| `profile` | 当前 profile |
+| `version` | ISO version |
+| `logical_grid` | 逻辑边长 |
+| `ecc` | 当前样例使用的 ECC |
+| `canvas_px` | carrier 画布边长 |
+| `max_frame_bytes` | 单帧最大总字节数 |
+| `max_payload_bytes` | 单帧最大净荷字节数 |
+
+`sample_capacity.tsv` 列：
+
+| 列名 | 说明 |
+| --- | --- |
+| `profile` | profile 名称 |
+| `version` | ISO version |
+| `logical_grid` | 逻辑边长 |
+| `ecc` | `M/Q/H` |
+| `max_frame_bytes` | 单帧最大总字节数 |
+| `max_payload_bytes` | 单帧最大净荷字节数 |
+| `recommended` | 是否为推荐工作点 |
+
+### 10.2 `encode`
+
+输出目录结构：
+- `frames/qr/frame_XXXXX.png`
+- `frames/carrier/frame_XXXXX.png`
+- `protocol_samples/`
+- `frame_manifest.tsv`
+- `input_info.txt`
+- `demo.mp4`
+- `video_status.txt`
+
+`frame_manifest.tsv` 列：
+
+| 列名 | 说明 |
+| --- | --- |
+| `file` | carrier/QR 帧文件名 |
+| `frame_seq` | 帧序号 |
+| `total_frames` | 总帧数 |
+| `payload_len` | 当前帧净荷长度 |
+| `profile` | 当前 profile |
+| `ecc` | 当前 ECC |
+| `canvas_px` | carrier 画布边长 |
+| `frame_bytes` | 当前帧总字节数 |
+
+`input_info.txt` 字段：
+- `protocol`
+- `profile`
+- `version`
+- `logical_grid`
+- `ecc`
+- `canvas_px`
+- `input_path`
+- `input_bytes`
+- `frame_count`
+- `max_frame_bytes`
+- `max_payload_bytes`
+- `fps`
+- `repeat`
+- `carrier_markers`
+
+### 10.3 `decode`
+
+输出：
+- `output.bin`
+- `decode_report.tsv`
+- `decode_summary.txt`
+- `missing_frames.txt`（仅缺帧时）
+- `decode_debug/source/`
+- `decode_debug/warped/`
+- `decode_debug/qr_crop/`
+
+`decode_report.tsv` 列：
+
+| 列名 | 说明 |
+| --- | --- |
+| `source_index` | 输入帧索引 |
+| `success` | 当前帧是否成功进入有效重组 |
+| `profile` | 当前解码 profile |
+| `ecc` | 当前解码 ECC |
+| `method` | `direct`、`aruco`、`warped-direct` 等 |
+| `frame_seq` | 解析出的帧序号 |
+| `total_frames` | 解析出的总帧数 |
+| `payload_len` | 解析出的净荷长度 |
+| `message` | 解码或校验信息 |
+
+`decode_summary.txt` 字段：
+- `decoded_frames`
+- `total_frames`
+- `output_bytes`
+
+`missing_frames.txt`：
+- 第一行记录缺帧数量
+- 后续每行一个缺失的 `frame_seq`
+
+## 11. 推荐参数与调优建议
+
+### 11.1 推荐工作点
+
+常规默认：
+- `--profile iso133 --ecc Q --canvas 1440`
+
+4K 录制：
+- `--profile iso133 --ecc Q --canvas 2160`
+
+拍摄噪声更大：
+- `--profile iso133 --ecc H --canvas 2160`
+
+### 11.2 参数取舍
+
+`profile` 越大：
+- 容量更高
+- 对拍摄采样密度越敏感
+
+`ecc` 越高：
+- 容量更低
+- 解码容错更高
+
+`canvas` 越大：
+- 单 module 的像素更大
+- 更适合录屏和屏摄
+- 输出文件也更大
+
+### 11.3 关于 `108`
+
+如果讨论“108 左右是否安全”，需要分清两件事：
+- 逻辑尺寸：标准 ISO 下不能是 `108`，最近合法值是 `109`
+- 渲染像素：真正影响识别的是每个 module 有多少像素，而不是只看逻辑边长
+
+因此当前主线用 `133x133`，并通过更大的 `canvas` 去提高可拍摄性。
+
+## 12. 失败模式与排障
+
+### 12.1 编码阶段
+
+常见失败：
+- `QRCodeEncoder` 返回空图
+- 当前参数下连 header 都塞不进去
+- 渲染尺度低于 `4 px/module`
+
+排障顺序：
+1. 确认 profile 和 ECC 没选得过激进
+2. 提高 `--canvas`
+3. 降低 profile 或降低 ECC 等级
+
+### 12.2 视频阶段
+
+常见失败：
+- `VideoWriter` 打不开输出文件
+- `ffmpeg` 不存在，无法转 `yuv420p`
+
+排障顺序：
+1. 先看 `video_status.txt`
+2. 确认 `ffmpeg/bin/ffmpeg(.exe)` 是否存在
+3. 若只需联调，可先接受 OpenCV 原始 MP4
+
+### 12.3 解码阶段
+
+常见失败：
+- 输入视频打不开
+- 直接解码失败
+- carrier marker 没定位到四个角
+- CRC32 不通过
+- `total_frames` 不一致
+- 缺帧
+
+排障顺序：
+1. 看 `decode_report.tsv`
+2. 检查 `decode_debug/source/`、`warped/`、`qr_crop/`
+3. 若 `warped/` 空缺，优先排查 marker 可见性
+4. 若 `qr_crop/` 有图但仍失败，优先排查 profile/ecc/canvas 是否过激进
+
+## 13. 已知限制
+
+- 当前鲁棒性仍高度依赖实际拍摄条件，尚未形成大规模实测统计。
+- 当前没有跨帧冗余，缺帧会直接导致整体解码失败。
+- 当前 decode 依赖调用时提供正确的 `profile/ecc/canvas` 语境，不做自动档位猜测。
+- macOS 上若要原样跑当前 C++ 主线，OpenCV 依赖成本较高；Windows + Visual Studio 的路径更直接。
+
+## 14. 后续工作
+
+建议后续按下面顺序演进：
+
+1. 做 `iso133 Q/H` 的实拍成功率统计
+2. 对 marker 检测和透视拉正做更多抗噪优化
+3. 视需要增加应用层跨帧冗余
+4. 若要扩到彩色协议，必须新开协议分支，不要污染当前 ISO 主线
