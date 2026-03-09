@@ -12,6 +12,21 @@
 
 - Type: `Changed`
   - Scope: `protocol`
+  - Summary: ISO 主线默认 profile 从 `iso145` 调整为 `iso133`（`Version 29 / 133x133`），并新增 `ECC=H` 支持以对齐组内实测档位与更高拍摄容错需求
+  - Compatibility: `breaking`
+
+- Type: `Added`
+  - Scope: `samples`
+  - Summary: `Project1 samples` 新增 `sample_capacity.tsv`，输出 `iso109/iso133/iso145/iso177` 在 `M/Q/H` 下的容量矩阵，并将 `iso133 + Q` 标记为推荐工作点
+  - Compatibility: `non-breaking`
+
+- Type: `Changed`
+  - Scope: `decode`
+  - Summary: `decode_report.tsv` 增加 `profile` 与 `ecc` 列，便于比较 `Version 29` 在 `Q/H` 下的解码表现
+  - Compatibility: `non-breaking`
+
+- Type: `Changed`
+  - Scope: `protocol`
   - Summary: 将当前有效主线从 `V1.6-108-4F` 自定义编码切换为真实标准 ISO QR 视频传输方案，支持 `iso109/iso145/iso177` 三档 profile 和 `M/Q` 纠错等级
   - Compatibility: `breaking`
 

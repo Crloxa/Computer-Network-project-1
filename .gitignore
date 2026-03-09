@@ -23,3 +23,6 @@ x86/
 
 # Local demo/runtime outputs
 /out/
+
+# Local Python virtual environment
+/.venv/

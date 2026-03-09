@@ -7,17 +7,25 @@
 
 ## 2. 尺寸与版本策略
 - ISO QR 逻辑边长必须满足 `21 + 4n`，不能做严格 `108x108`。
-- 当前支持三档大尺寸 profile：
+- “108 左右”只作为经验参考；若必须靠近该尺寸，只能使用最近合法标准档 `109x109`。
+- 当前支持四档 profile：
   - `iso109`：`Version 23`，`109 x 109`
+  - `iso133`：`Version 29`，`133 x 133`
   - `iso145`：`Version 32`，`145 x 145`
   - `iso177`：`Version 40`，`177 x 177`
-- 默认 profile：`iso145`
+- 默认 profile：`iso133`
 - 默认纠错等级：`ECC = Q`
 - 对照实验档位：`ECC = M`
+- 弱拍摄条件可切到：`ECC = H`
+- 推荐工作点：
+  - 常规：`Version 29 + ECC Q + canvas 1440`
+  - 4K 录制：`Version 29 + ECC Q + canvas 2160`
+  - 噪声更大时：`Version 29 + ECC H + canvas 2160`
 
 ## 3. 标准二维码本体
 - 保持标准 quiet zone，不在 QR 本体上叠加任何非标准图形。
 - Finder、alignment、timing、format、mask 与 RS 纠错均由标准 QR 机制决定。
+- 当前实现直接使用标准 QR 自带的 Reed-Solomon 纠错等级，不额外改造 QR 本体纠错结构。
 - 编码模式固定使用 `Byte mode`。
 - QR 本体只承载应用层字节流，不承载 carrier 额外定位信息。
 
@@ -65,8 +73,8 @@
 
 ## 8. CLI
 - `Project1 samples <output_dir>`
-- `Project1 encode <input_file> <output_dir> [--profile iso109|iso145|iso177] [--ecc M|Q] [--canvas px] [--fps n] [--repeat n]`
-- `Project1 decode <input_video_or_frame_dir> <output_dir> [--profile iso109|iso145|iso177] [--ecc M|Q] [--canvas px]`
+- `Project1 encode <input_file> <output_dir> [--profile iso109|iso133|iso145|iso177] [--ecc M|Q|H] [--canvas px] [--fps n] [--repeat n]`
+- `Project1 decode <input_video_or_frame_dir> <output_dir> [--profile iso109|iso133|iso145|iso177] [--ecc M|Q|H] [--canvas px]`
 
 ## 9. 输出产物
 - 编码：
@@ -76,6 +84,7 @@
   - `input_info.txt`
   - `demo.mp4`
   - `video_status.txt`
+  - `protocol_samples/sample_capacity.tsv`
 - 解码：
   - `output.bin`
   - `decode_report.tsv`
@@ -87,4 +96,6 @@
 
 ## 10. 兼容性说明
 - 当前主线不再扩展旧的 `V1.6-108-4F` 自定义协议。
+- 当前默认实现不再以 `Version 32 / 145x145` 为主，而是按组内实测基线切到 `Version 29 / 133x133`。
 - 若后续需要“颜色承载额外 bit”的彩色协议，应另开新协议，不应修改本方案的 ISO QR 本体定义。
+- 若后续需要抗丢帧增强，应在应用层单独增加跨帧冗余；不要把它和标准 QR 内部 RS 纠错混为一谈。

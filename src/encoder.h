@@ -21,6 +21,8 @@ struct EncodedFrame {
 struct DecodedFrameReport {
     int source_index = -1;
     bool success = false;
+    std::string profile;
+    std::string ecc;
     std::string method;
     std::string message;
     uint16_t frame_seq = 0;

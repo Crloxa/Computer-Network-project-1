@@ -70,6 +70,8 @@ cv::QRCodeEncoder::CorrectionLevel ToOpenCvCorrection(protocol_iso::ErrorCorrect
             return cv::QRCodeEncoder::CorrectionLevel::CORRECT_LEVEL_M;
         case protocol_iso::ErrorCorrection::kQ:
             return cv::QRCodeEncoder::CorrectionLevel::CORRECT_LEVEL_Q;
+        case protocol_iso::ErrorCorrection::kH:
+            return cv::QRCodeEncoder::CorrectionLevel::CORRECT_LEVEL_H;
     }
     return cv::QRCodeEncoder::CorrectionLevel::CORRECT_LEVEL_Q;
 }
@@ -664,10 +666,12 @@ bool WriteDecodeReport(const std::filesystem::path& report_path,
         return false;
     }
 
-    stream << "source_index\tsuccess\tmethod\tframe_seq\ttotal_frames\tpayload_len\tmessage\n";
+    stream << "source_index\tsuccess\tprofile\tecc\tmethod\tframe_seq\ttotal_frames\tpayload_len\tmessage\n";
     for (const DecodedFrameReport& report : reports) {
         stream << report.source_index << '\t'
                << (report.success ? "true" : "false") << '\t'
+               << report.profile << '\t'
+               << report.ecc << '\t'
                << report.method << '\t'
                << report.frame_seq << '\t'
                << report.total_frames << '\t'
@@ -712,6 +716,15 @@ bool WriteIsoSamples(const std::filesystem::path& output_dir,
         return false;
     }
     manifest << "file\tprofile\tversion\tlogical_grid\tecc\tcanvas_px\tmax_frame_bytes\tmax_payload_bytes\n";
+
+    std::ofstream capacity_manifest(output_dir / "sample_capacity.tsv");
+    if (!capacity_manifest.is_open()) {
+        if (error_message != nullptr) {
+            *error_message = "Failed to write ISO sample capacity matrix.";
+        }
+        return false;
+    }
+    capacity_manifest << "profile\tversion\tlogical_grid\tecc\tmax_frame_bytes\tmax_payload_bytes\trecommended\n";
 
     for (const protocol_iso::Profile& profile : protocol_iso::SupportedProfiles()) {
         protocol_iso::EncoderOptions profile_options = options;
@@ -763,6 +776,31 @@ bool WriteIsoSamples(const std::filesystem::path& output_dir,
                  << profile_options.canvas_pixels << '\t'
                  << max_frame_bytes << '\t'
                  << (max_frame_bytes - protocol_iso::kFrameOverheadBytes) << '\n';
+
+        for (const protocol_iso::ErrorCorrection error_correction : protocol_iso::SupportedErrorCorrections()) {
+            protocol_iso::EncoderOptions capacity_options = profile_options;
+            capacity_options.error_correction = error_correction;
+            std::string matrix_error;
+            const int matrix_frame_bytes = DetermineMaxFrameBytes(capacity_options, &matrix_error);
+            if (matrix_frame_bytes < 0) {
+                if (error_message != nullptr) {
+                    *error_message = matrix_error;
+                }
+                return false;
+            }
+
+            capacity_manifest << profile.name << '\t'
+                              << profile.version << '\t'
+                              << profile.logical_size << '\t'
+                              << protocol_iso::ErrorCorrectionName(error_correction) << '\t'
+                              << matrix_frame_bytes << '\t'
+                              << (matrix_frame_bytes - protocol_iso::kFrameOverheadBytes) << '\t'
+                              << ((profile.id == protocol_iso::ProfileId::kIso133 &&
+                                   error_correction == protocol_iso::ErrorCorrection::kQ)
+                                      ? "true"
+                                      : "false")
+                              << '\n';
+        }
     }
 
     return true;
@@ -899,6 +937,8 @@ bool DecodeIsoPackage(const std::filesystem::path& input_path,
         DecodeAttemptResult attempt = TryDecodeFrame(frames[index], options);
         DecodedFrameReport report;
         report.source_index = static_cast<int>(index);
+        report.profile = protocol_iso::ProfileName(options.profile_id);
+        report.ecc = protocol_iso::ErrorCorrectionName(options.error_correction);
         report.method = attempt.method.empty() ? "none" : attempt.method;
         report.message = attempt.message;
 

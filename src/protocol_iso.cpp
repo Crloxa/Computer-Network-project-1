@@ -45,24 +45,34 @@ Profile ProfileFromId(ProfileId profile_id) {
     switch (profile_id) {
         case ProfileId::kIso109:
             return {profile_id, "iso109", 23, 109};
+        case ProfileId::kIso133:
+            return {profile_id, "iso133", 29, 133};
         case ProfileId::kIso145:
             return {profile_id, "iso145", 32, 145};
         case ProfileId::kIso177:
             return {profile_id, "iso177", 40, 177};
     }
-    return {ProfileId::kIso145, "iso145", 32, 145};
+    return {ProfileId::kIso133, "iso133", 29, 133};
 }
 
 std::vector<Profile> SupportedProfiles() {
     return {ProfileFromId(ProfileId::kIso109),
+            ProfileFromId(ProfileId::kIso133),
             ProfileFromId(ProfileId::kIso145),
             ProfileFromId(ProfileId::kIso177)};
+}
+
+std::vector<ErrorCorrection> SupportedErrorCorrections() {
+    return {ErrorCorrection::kM, ErrorCorrection::kQ, ErrorCorrection::kH};
 }
 
 std::optional<ProfileId> ParseProfileId(std::string_view value) {
     const std::string normalized = ToLowerCopy(value);
     if (normalized == "iso109" || normalized == "109" || normalized == "v23") {
         return ProfileId::kIso109;
+    }
+    if (normalized == "iso133" || normalized == "133" || normalized == "v29") {
+        return ProfileId::kIso133;
     }
     if (normalized == "iso145" || normalized == "145" || normalized == "v32") {
         return ProfileId::kIso145;
@@ -85,6 +95,9 @@ std::optional<ErrorCorrection> ParseErrorCorrection(std::string_view value) {
     if (normalized == "q") {
         return ErrorCorrection::kQ;
     }
+    if (normalized == "h") {
+        return ErrorCorrection::kH;
+    }
     return std::nullopt;
 }
 
@@ -94,6 +107,8 @@ std::string ErrorCorrectionName(ErrorCorrection error_correction) {
             return "M";
         case ErrorCorrection::kQ:
             return "Q";
+        case ErrorCorrection::kH:
+            return "H";
     }
     return "Q";
 }

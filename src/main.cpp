@@ -10,11 +10,11 @@ namespace {
 
 void PrintUsage(const char* program_name) {
     std::cout << "Usage:\n"
-              << "  " << program_name << " samples <output_dir> [--profile iso109|iso145|iso177] [--ecc M|Q] [--canvas px]\n"
-              << "  " << program_name << " encode <input_file> <output_dir> [--profile iso109|iso145|iso177] [--ecc M|Q] [--canvas px] [--fps n] [--repeat n]\n"
-              << "  " << program_name << " decode <input_video_or_frame_dir> <output_dir> [--profile iso109|iso145|iso177] [--ecc M|Q] [--canvas px]\n\n"
+              << "  " << program_name << " samples <output_dir> [--profile iso109|iso133|iso145|iso177] [--ecc M|Q|H] [--canvas px]\n"
+              << "  " << program_name << " encode <input_file> <output_dir> [--profile iso109|iso133|iso145|iso177] [--ecc M|Q|H] [--canvas px] [--fps n] [--repeat n]\n"
+              << "  " << program_name << " decode <input_video_or_frame_dir> <output_dir> [--profile iso109|iso133|iso145|iso177] [--ecc M|Q|H] [--canvas px]\n\n"
               << "Commands:\n"
-              << "  samples  Write ISO QR samples and carrier layout previews.\n"
+              << "  samples  Write ISO QR samples, carrier layout previews, and an M/Q/H capacity matrix.\n"
               << "  encode   Encode a single input file into ISO QR frames and demo.mp4.\n"
               << "  decode   Decode an ISO QR video or frame directory back into output.bin.\n";
 }

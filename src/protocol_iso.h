@@ -10,6 +10,7 @@ namespace protocol_iso {
 
 enum class ProfileId {
     kIso109,
+    kIso133,
     kIso145,
     kIso177,
 };
@@ -17,13 +18,14 @@ enum class ProfileId {
 enum class ErrorCorrection {
     kM,
     kQ,
+    kH,
 };
 
 struct Profile {
-    ProfileId id = ProfileId::kIso145;
-    const char* name = "iso145";
-    int version = 32;
-    int logical_size = 145;
+    ProfileId id = ProfileId::kIso133;
+    const char* name = "iso133";
+    int version = 29;
+    int logical_size = 133;
 };
 
 struct FrameHeader {
@@ -35,7 +37,7 @@ struct FrameHeader {
 };
 
 struct EncoderOptions {
-    ProfileId profile_id = ProfileId::kIso145;
+    ProfileId profile_id = ProfileId::kIso133;
     ErrorCorrection error_correction = ErrorCorrection::kQ;
     int canvas_pixels = 1440;
     int fps = 60;
@@ -51,6 +53,7 @@ constexpr int kFrameOverheadBytes = kHeaderBytes + kCrcBytes;
 
 Profile ProfileFromId(ProfileId profile_id);
 std::vector<Profile> SupportedProfiles();
+std::vector<ErrorCorrection> SupportedErrorCorrections();
 std::optional<ProfileId> ParseProfileId(std::string_view value);
 std::string ProfileName(ProfileId profile_id);
 

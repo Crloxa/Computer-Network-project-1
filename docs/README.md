@@ -24,6 +24,8 @@
 - 当前样例生成命令：
   - `Project1 samples out/samples`
 - 当前编码命令：
-  - `Project1 encode input.bin out/encode/input --profile iso145 --ecc Q --canvas 1440`
+  - `Project1 encode input.bin out/encode/input --profile iso133 --ecc Q --canvas 1440`
 - 当前解码命令：
-  - `Project1 decode out/encode/input/demo.mp4 out/decode/input --profile iso145 --ecc Q --canvas 1440`
+  - `Project1 decode out/encode/input/demo.mp4 out/decode/input --profile iso133 --ecc Q --canvas 1440`
+- 4K 录制推荐命令：
+  - `Project1 encode input.bin out/encode/input_4k --profile iso133 --ecc Q --canvas 2160`
