@@ -1,32 +1,172 @@
-#include <opencv2/opencv.hpp>
+#include "encoder.h"
+
+#include <exception>
+#include <filesystem>
 #include <iostream>
-#include <consoleapi2.h>
+#include <string>
+#include <vector>
 
-using namespace cv;
-using namespace std;
+namespace {
 
-int main() {
-    // 1. 创建一个 400x400 的黑色画布 (8位3通道)
-    Mat image = Mat::zeros(400, 400, CV_8UC3);
+void PrintUsage(const char* program_name) {
+    std::cout << "Usage:\n"
+              << "  " << program_name << " samples <output_dir> [--profile iso109|iso133|iso145|iso177] [--ecc M|Q|H] [--canvas px]\n"
+              << "  " << program_name << " encode <input_file> <output_dir> [--profile iso109|iso133|iso145|iso177] [--ecc M|Q|H] [--canvas px] [--fps n] [--repeat n]\n"
+              << "  " << program_name << " decode <input_video_or_frame_dir> <output_dir> [--profile iso109|iso133|iso145|iso177] [--ecc M|Q|H] [--canvas px]\n\n"
+              << "Commands:\n"
+              << "  samples  Write ISO QR samples, carrier layout previews, and an M/Q/H capacity matrix.\n"
+              << "  encode   Encode a single input file into ISO QR frames and demo.mp4.\n"
+              << "  decode   Decode an ISO QR video or frame directory back into output.bin.\n";
+}
 
-    // 2. 在图像中心画一个圆
-    // 参数：原图, 中心点, 半径, 颜色(BGR), 粗细
-    circle(image, Point(200, 200), 100, Scalar(0, 255, 255), 3);
+bool ParseOptions(int argc, char* argv[], int option_start, protocol_iso::EncoderOptions* options, std::string* error) {
+    for (int index = option_start; index < argc; ++index) {
+        const std::string argument = argv[index];
+        if (argument == "--profile") {
+            if (index + 1 >= argc) {
+                *error = "--profile requires a value.";
+                return false;
+            }
+            const auto profile = protocol_iso::ParseProfileId(argv[++index]);
+            if (!profile.has_value()) {
+                *error = "Unsupported profile: " + std::string(argv[index]);
+                return false;
+            }
+            options->profile_id = profile.value();
+        } else if (argument == "--ecc") {
+            if (index + 1 >= argc) {
+                *error = "--ecc requires a value.";
+                return false;
+            }
+            const auto ecc = protocol_iso::ParseErrorCorrection(argv[++index]);
+            if (!ecc.has_value()) {
+                *error = "Unsupported ECC level: " + std::string(argv[index]);
+                return false;
+            }
+            options->error_correction = ecc.value();
+        } else if (argument == "--canvas") {
+            if (index + 1 >= argc) {
+                *error = "--canvas requires a value.";
+                return false;
+            }
+            options->canvas_pixels = std::stoi(argv[++index]);
+        } else if (argument == "--fps") {
+            if (index + 1 >= argc) {
+                *error = "--fps requires a value.";
+                return false;
+            }
+            options->fps = std::stoi(argv[++index]);
+        } else if (argument == "--repeat") {
+            if (index + 1 >= argc) {
+                *error = "--repeat requires a value.";
+                return false;
+            }
+            options->repeat = std::stoi(argv[++index]);
+        } else if (argument == "--markers") {
+            if (index + 1 >= argc) {
+                *error = "--markers requires a value.";
+                return false;
+            }
+            const std::string value = argv[++index];
+            if (value == "on") {
+                options->enable_carrier_markers = true;
+            } else if (value == "off") {
+                options->enable_carrier_markers = false;
+            } else {
+                *error = "--markers must be 'on' or 'off'.";
+                return false;
+            }
+        } else {
+            *error = "Unknown option: " + argument;
+            return false;
+        }
+    }
 
-    // 3. 在图像上写字
-    putText(image, "OpenCV Config Success!", Point(50, 50),
-        FONT_HERSHEY_SIMPLEX, 0.8, Scalar(255, 255, 255), 2);
+    if (options->canvas_pixels < 720) {
+        *error = "--canvas must be at least 720.";
+        return false;
+    }
+    if (options->fps <= 0 || options->repeat <= 0) {
+        *error = "--fps and --repeat must be positive.";
+        return false;
+    }
+    return true;
+}
 
-    // 4. 创建窗口并显示
-    namedWindow("OpenCV Test", WINDOW_AUTOSIZE);
-    imshow("OpenCV Test", image);
-
-    cout << "OpenCV 版本: " << CV_VERSION << endl;
-    cout << "按下任意键退出程序..." << endl;
-
-    // 5. 等待按键，否则窗口会一闪而过
-    waitKey(0);
-    destroyAllWindows();
-
+int RunSamples(const std::filesystem::path& output_dir, const protocol_iso::EncoderOptions& options) {
+    std::string error_message;
+    if (!demo_encoder::WriteIsoSamples(output_dir, options, &error_message)) {
+        std::cerr << error_message << std::endl;
+        return 1;
+    }
+    std::cout << "ISO samples written to: " << output_dir << std::endl;
     return 0;
+}
+
+int RunEncode(const std::filesystem::path& input_path,
+              const std::filesystem::path& output_dir,
+              const protocol_iso::EncoderOptions& options) {
+    std::string error_message;
+    if (!demo_encoder::WriteIsoPackage(input_path, output_dir, options, &error_message)) {
+        std::cerr << error_message << std::endl;
+        return 1;
+    }
+    std::cout << "ISO package written to: " << output_dir << std::endl;
+    return 0;
+}
+
+int RunDecode(const std::filesystem::path& input_path,
+              const std::filesystem::path& output_dir,
+              const protocol_iso::EncoderOptions& options) {
+    std::string error_message;
+    if (!demo_encoder::DecodeIsoPackage(input_path, output_dir, options, &error_message)) {
+        std::cerr << error_message << std::endl;
+        return 1;
+    }
+    std::cout << "ISO decode output written to: " << output_dir << std::endl;
+    return 0;
+}
+
+}  // namespace
+
+int main(int argc, char* argv[]) {
+    try {
+        if (argc < 3) {
+            PrintUsage(argv[0]);
+            return 1;
+        }
+
+        protocol_iso::EncoderOptions options;
+        std::string parse_error;
+        const std::string command = argv[1];
+        if (command == "samples") {
+            if (!ParseOptions(argc, argv, 3, &options, &parse_error)) {
+                std::cerr << parse_error << std::endl;
+                return 1;
+            }
+            return RunSamples(argv[2], options);
+        }
+
+        if (command == "encode" && argc >= 4) {
+            if (!ParseOptions(argc, argv, 4, &options, &parse_error)) {
+                std::cerr << parse_error << std::endl;
+                return 1;
+            }
+            return RunEncode(argv[2], argv[3], options);
+        }
+
+        if (command == "decode" && argc >= 4) {
+            if (!ParseOptions(argc, argv, 4, &options, &parse_error)) {
+                std::cerr << parse_error << std::endl;
+                return 1;
+            }
+            return RunDecode(argv[2], argv[3], options);
+        }
+
+        PrintUsage(argv[0]);
+        return 1;
+    } catch (const std::exception& error) {
+        std::cerr << "Fatal error: " << error.what() << std::endl;
+        return 1;
+    }
 }

@@ -1,5 +1,6 @@
 # Visual Studio 临时文件
 .vs/
+/GroupTest/src/.vs/
 [Dd]ebug/
 [Rr]elease/
 x64/
@@ -19,3 +20,9 @@ x86/
 # 刚才提到的生成后事件拷贝的副本
 # 如果你确定 .dll 只存在于 lib/ 中，那么过滤掉其他地方的 .dll
 # *.dll
+
+# Local demo/runtime outputs
+/out/
+
+# Local Python virtual environment
+/.venv/
