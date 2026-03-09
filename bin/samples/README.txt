@@ -1,11 +1,21 @@
-这些 PNG 与 `docs/protocols/protocol_v1.md` 以及当前 `V1.6-108-4F` C++ 编码器实现保持一致。
-请使用可执行程序按输入文件生成对应的帧序列和 `demo.mp4`。
+`bin/samples/` 下当前已提交的 PNG/TSV 来自旧阶段试验，不再代表现行主线协议。
 
-附加样例（二维码风格教学方案 `QRX-25-3F1A`）：
-- `sample_qrx_25_3f1a.png`
-- `sample_qrx_25_3f1a_layout.png`
-- `sample_manifest_qrx_25_3f1a.tsv`
+当前有效的 ISO 主线样例请使用以下命令实时生成：
+- `Project1 samples out/samples`
 
-附加样例（ISO 标准二维码课程方案 `Version 2, 25x25`）：
-- `sample_iso_qr_v2_symbol.png`
-- `sample_iso_qr_v2_layout.png`
+运行后会生成：
+- `sample_iso109_symbol.png`
+- `sample_iso109_carrier.png`
+- `sample_iso109_layout.png`
+- `sample_iso145_symbol.png`
+- `sample_iso145_carrier.png`
+- `sample_iso145_layout.png`
+- `sample_iso177_symbol.png`
+- `sample_iso177_carrier.png`
+- `sample_iso177_layout.png`
+- `sample_manifest.tsv`
+
+说明：
+- 中央 QR 为真实标准 ISO QR。
+- 外围 carrier 仅用于视频定位与透视矫正，不属于 QR 本体标准。
+- 旧 `layout_guide.png`、`sample_full_frame.png`、`sample_iso_qr_v2_*`、`sample_manifest_qrx_25_3f1a.tsv` 仅作历史参考。

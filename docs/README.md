@@ -1,36 +1,29 @@
 # 文档索引
 
-`docs/` 目录按“索引、规范、历史”组织，减少多人协作和 agent 读取时的定位成本。
+`docs/` 目录按“当前主线、历史参考、变更记录”组织，避免协议描述与实现脱节。
 
 ## 阅读入口
-- 新同学或首次接手：先看 `docs/README.md`
-- 协议/编解码实现：看 `docs/protocols/protocol_v1.md`（当前有效协议为 `V1.6-108-4F`）
-- ISO 标准二维码课程方案：看 `docs/protocols/protocol_iso_qr_v2_course.md`
-- 二维码风格基线方案：看 `docs/protocols/protocol_qrx_25_3f1a.md`
-- 协议优化过程：看 `docs/protocols/protocol_v1_optimization_journey.md`
-- 鲁棒版设计草案：看 `docs/protocols/protocol_v1_robust_108x108.md`
-- 最近发生了什么变化：看 `docs/CHANGELOG.md`
-- 协议基准样例：看 `bin/samples/`
+- 当前有效协议与编解码主线：看 `docs/protocols/protocol_iso_qr_v2_course.md`
+- 历史自定义方案参考：看 `docs/protocols/protocol_v1.md`
+- 最近发生的有效改动：看 `docs/CHANGELOG.md`
+- 样例和运行产物说明：看 `bin/samples/README.txt`
 
 ## 当前结构
 - `docs/README.md`：文档入口与阅读顺序
 - `docs/CHANGELOG.md`：集中式改动记录，最新在前
-- `docs/protocols/protocol_v1.md`：当前有效的 `V1.6-108-4F` 协议规范
-- `docs/protocols/protocol_iso_qr_v2_course.md`：ISO QR Version 2（3 Finder + 1 Alignment）课程实现方案
-- `docs/protocols/protocol_qrx_25_3f1a.md`：`3 Finder + 1 Alignment` 的二维码风格方案
-- `docs/protocols/protocol_v1_optimization_journey.md`：协议优化过程记录
-- `docs/protocols/protocol_v1_robust_108x108.md`：鲁棒版方案草案与参数说明
+- `docs/protocols/protocol_iso_qr_v2_course.md`：当前有效的 ISO QR 视频传输主线
+- `docs/protocols/protocol_v1.md`：旧的 `V1.6-108-4F` 自定义方案，仅作历史参考
 
 ## 协作约定
 - 修改协议、代码行为、构建方式、样例资产或文档结构时，必须同步更新 `docs/CHANGELOG.md`
-- 新增或移动文档时，必须同步维护本文件
-- 协议正文只保留当前有效规则，历史变化统一记录到 changelog，不在正文堆叠旧版本说明
-- 过程性方案和对比分析统一放在 `docs/protocols/`，避免协议资料分散在 `docs/` 根目录
+- 协议正文只保留当前有效规则；被替代方案移入历史参考，不再继续扩写
+- 若样例图片不是由当前代码生成，必须明确标注为历史样例，不能冒充当前主线基准
 
 ## 常用联调路径
-- 样例图片：`bin/samples/`
 - 运行输出：`out/`
-- 编码命令：
+- 当前样例生成命令：
   - `Project1 samples out/samples`
-  - `Project1 demo input.jpg out/demo/input`
-  - `Project1 encode input.bin out/encode/input`
+- 当前编码命令：
+  - `Project1 encode input.bin out/encode/input --profile iso145 --ecc Q --canvas 1440`
+- 当前解码命令：
+  - `Project1 decode out/encode/input/demo.mp4 out/decode/input --profile iso145 --ecc Q --canvas 1440`

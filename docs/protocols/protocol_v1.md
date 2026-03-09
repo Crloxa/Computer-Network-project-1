@@ -1,4 +1,6 @@
-# 协议 V1.6：108x108 四 Finder 鲁棒编码格式
+# 协议 V1.6：108x108 四 Finder 鲁棒编码格式（历史参考）
+
+> 本文档描述旧的自定义方案。当前有效主线已切换为 `docs/protocols/protocol_iso_qr_v2_course.md` 中的 ISO QR 方案。
 
 ## 固定几何布局
 - 协议标识：`V1.6-108-4F`

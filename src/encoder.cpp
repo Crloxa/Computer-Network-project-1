@@ -1,9 +1,13 @@
 #include "encoder.h"
 
 #include <algorithm>
+#include <array>
 #include <cstdlib>
 #include <fstream>
 #include <iomanip>
+#include <map>
+#include <optional>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <system_error>
@@ -11,61 +15,23 @@
 namespace demo_encoder {
 namespace {
 
-using protocol_v1::FrameHeader;
-using protocol_v1::GridPoint;
+struct CarrierLayout {
+    int canvas_pixels = 1440;
+    int marker_margin = 0;
+    int marker_size = 0;
+    int qr_size = 0;
+    int qr_x = 0;
+    int qr_y = 0;
+};
 
-constexpr int kFinderTopLeftOrigin = 0;
-constexpr int kFinderTopRightOrigin = protocol_v1::kLogicalGridSize - protocol_v1::kFinderSizeModules;
-constexpr int kFinderBottomLeftOrigin = protocol_v1::kLogicalGridSize - protocol_v1::kFinderSizeModules;
-constexpr int kFinderTopRightReserveOrigin = protocol_v1::kLogicalGridSize - protocol_v1::kFinderReserveSizeModules;
-constexpr int kFinderBottomLeftReserveOrigin = protocol_v1::kLogicalGridSize - protocol_v1::kFinderReserveSizeModules;
-constexpr int kFinderBottomRightReserveOrigin = protocol_v1::kLogicalGridSize - protocol_v1::kFinderReserveSizeModules;
-
-void SetCell(cv::Mat& logical_frame, int x, int y, bool black) {
-    logical_frame.at<unsigned char>(y, x) = black ? 0U : 255U;
-}
-
-bool IsStandardFinderBlack(int dx, int dy) {
-    const int max_distance = std::max(std::abs(dx - 3), std::abs(dy - 3));
-    return (max_distance == 3) || (max_distance <= 1);
-}
-
-void DrawFinder(cv::Mat& logical_frame, int origin_x, int origin_y, bool invert_center) {
-    for (int dy = 0; dy < protocol_v1::kFinderSizeModules; ++dy) {
-        for (int dx = 0; dx < protocol_v1::kFinderSizeModules; ++dx) {
-            bool black = IsStandardFinderBlack(dx, dy);
-            if (invert_center && dx >= 2 && dx <= 4 && dy >= 2 && dy <= 4) {
-                black = !black;
-            }
-            SetCell(logical_frame, origin_x + dx, origin_y + dy, black);
-        }
-    }
-}
-
-void DrawAlignment(cv::Mat& logical_frame) {
-    for (int dy = 0; dy < protocol_v1::kAlignmentSizeModules; ++dy) {
-        for (int dx = 0; dx < protocol_v1::kAlignmentSizeModules; ++dx) {
-            const int max_distance = std::max(std::abs(dx - 2), std::abs(dy - 2));
-            const bool black = (max_distance == 2) || (max_distance == 0);
-            SetCell(logical_frame,
-                    protocol_v1::kAlignmentOriginX + dx,
-                    protocol_v1::kAlignmentOriginY + dy,
-                    black);
-        }
-    }
-}
-
-void DrawTimingPatterns(cv::Mat& logical_frame) {
-    for (int x = protocol_v1::kTimingStart; x <= protocol_v1::kTimingEnd; ++x) {
-        SetCell(logical_frame, x, protocol_v1::kTimingHorizontalY,
-                ((x - protocol_v1::kTimingStart) % 2) == 0);
-    }
-    for (int y = protocol_v1::kTimingStart; y <= protocol_v1::kTimingEnd; ++y) {
-        SetCell(logical_frame, protocol_v1::kTimingVerticalX, y,
-                ((y - protocol_v1::kTimingStart) % 2) == 0);
-    }
-    SetCell(logical_frame, protocol_v1::kTimingVerticalX, protocol_v1::kTimingHorizontalY, true);
-}
+struct DecodeAttemptResult {
+    bool success = false;
+    std::string method;
+    std::vector<uint8_t> frame_bytes;
+    cv::Mat warped_frame;
+    cv::Mat qr_crop;
+    std::string message;
+};
 
 std::string FrameFileName(std::size_t index) {
     std::ostringstream stream;
@@ -87,27 +53,262 @@ bool EnsureDirectory(const std::filesystem::path& path, std::string* error_messa
     return false;
 }
 
-uint32_t BitsToUInt32(const std::vector<bool>& bits, std::size_t start_index) {
-    uint32_t value = 0U;
-    for (std::size_t offset = 0; offset < 32U; ++offset) {
-        value <<= 1U;
-        value |= bits[start_index + offset] ? 1U : 0U;
-    }
-    return value;
+CarrierLayout BuildCarrierLayout(const protocol_iso::EncoderOptions& options) {
+    CarrierLayout layout;
+    layout.canvas_pixels = options.canvas_pixels;
+    layout.marker_margin = std::max(24, options.canvas_pixels / 28);
+    layout.marker_size = std::max(72, options.canvas_pixels / 9);
+    layout.qr_size = std::max(720, static_cast<int>(options.canvas_pixels * 0.78));
+    layout.qr_x = (options.canvas_pixels - layout.qr_size) / 2;
+    layout.qr_y = layout.qr_x;
+    return layout;
 }
 
-FrameHeader MakeHeader(uint16_t frame_seq, const std::vector<uint8_t>& payload) {
-    FrameHeader header;
-    header.frame_seq = frame_seq;
-    header.payload_len_bytes = static_cast<uint16_t>(payload.size());
-    header.crc32_payload = protocol_v1::ComputeCrc32(payload);
-    const std::vector<bool> packed_bits = protocol_v1::PackHeaderBits(header);
-    header.crc32_header = BitsToUInt32(packed_bits, 128U);
-    return header;
+cv::QRCodeEncoder::CorrectionLevel ToOpenCvCorrection(protocol_iso::ErrorCorrection error_correction) {
+    switch (error_correction) {
+        case protocol_iso::ErrorCorrection::kM:
+            return cv::QRCodeEncoder::CorrectionLevel::CORRECT_LEVEL_M;
+        case protocol_iso::ErrorCorrection::kQ:
+            return cv::QRCodeEncoder::CorrectionLevel::CORRECT_LEVEL_Q;
+    }
+    return cv::QRCodeEncoder::CorrectionLevel::CORRECT_LEVEL_Q;
+}
+
+std::string BytesToString(const std::vector<uint8_t>& bytes) {
+    return std::string(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+}
+
+std::vector<uint8_t> StringToBytes(const std::string& value) {
+    return std::vector<uint8_t>(value.begin(), value.end());
+}
+
+cv::Mat RenderMarker(int size_pixels, bool invert_center) {
+    cv::Mat marker(7, 7, CV_8UC1, cv::Scalar(255));
+    for (int y = 0; y < 7; ++y) {
+        for (int x = 0; x < 7; ++x) {
+            const int distance = std::max(std::abs(x - 3), std::abs(y - 3));
+            bool black = (distance == 3) || (distance <= 1);
+            if (invert_center && x >= 2 && x <= 4 && y >= 2 && y <= 4) {
+                black = !black;
+            }
+            marker.at<unsigned char>(y, x) = black ? 0U : 255U;
+        }
+    }
+
+    cv::Mat scaled;
+    cv::resize(marker, scaled, cv::Size(size_pixels, size_pixels), 0.0, 0.0, cv::INTER_NEAREST);
+    cv::cvtColor(scaled, scaled, cv::COLOR_GRAY2BGR);
+    return scaled;
+}
+
+bool TryEncodeQrBytes(const std::vector<uint8_t>& frame_bytes,
+                      const protocol_iso::EncoderOptions& options,
+                      cv::Mat* qr_frame,
+                      std::string* error_message) {
+    try {
+        const protocol_iso::Profile profile = protocol_iso::ProfileFromId(options.profile_id);
+        cv::QRCodeEncoder::Params params;
+        params.version = profile.version;
+        params.correction_level = ToOpenCvCorrection(options.error_correction);
+        params.mode = cv::QRCodeEncoder::EncodeMode::MODE_BYTE;
+        params.structure_number = 1;
+
+        const cv::Ptr<cv::QRCodeEncoder> encoder = cv::QRCodeEncoder::create(params);
+        cv::Mat qr_image;
+        encoder->encode(BytesToString(frame_bytes), qr_image);
+        if (qr_image.empty()) {
+            if (error_message != nullptr) {
+                *error_message = "OpenCV QRCodeEncoder returned an empty ISO QR image.";
+            }
+            return false;
+        }
+        if (qr_image.type() != CV_8UC1) {
+            cv::cvtColor(qr_image, qr_image, cv::COLOR_BGR2GRAY);
+        }
+        if (qr_frame != nullptr) {
+            *qr_frame = qr_image;
+        }
+        return true;
+    } catch (const cv::Exception& error) {
+        if (error_message != nullptr) {
+            *error_message = error.what();
+        }
+        return false;
+    }
+}
+
+bool ValidateRenderedScale(const cv::Mat& qr_frame,
+                           const protocol_iso::EncoderOptions& options,
+                           std::string* error_message) {
+    if (qr_frame.empty()) {
+        if (error_message != nullptr) {
+            *error_message = "QR frame is empty; cannot validate rendered module scale.";
+        }
+        return false;
+    }
+
+    const CarrierLayout layout = BuildCarrierLayout(options);
+    const double module_pixels = static_cast<double>(layout.qr_size) / static_cast<double>(qr_frame.cols);
+    if (module_pixels < 4.0) {
+        if (error_message != nullptr) {
+            std::ostringstream stream;
+            stream << "Rendered module scale is too small for reliable screen capture: "
+                   << std::fixed << std::setprecision(2) << module_pixels
+                   << " px/module. Increase --canvas or use a smaller ISO profile.";
+            *error_message = stream.str();
+        }
+        return false;
+    }
+    return true;
+}
+
+int DetermineMaxFrameBytes(const protocol_iso::EncoderOptions& options, std::string* error_message) {
+    int low = protocol_iso::kFrameOverheadBytes;
+    int high = 4096;
+    int best = 0;
+
+    while (low <= high) {
+        const int candidate = low + (high - low) / 2;
+        std::vector<uint8_t> test_bytes(static_cast<std::size_t>(candidate), 0x41U);
+        cv::Mat qr_image;
+        std::string encode_error;
+        if (TryEncodeQrBytes(test_bytes, options, &qr_image, &encode_error)) {
+            best = candidate;
+            low = candidate + 1;
+        } else {
+            high = candidate - 1;
+        }
+    }
+
+    if (best < protocol_iso::kFrameOverheadBytes) {
+        if (error_message != nullptr) {
+            *error_message = "Unable to encode even the ISO application header using the selected profile/ecc.";
+        }
+        return -1;
+    }
+
+    return best;
+}
+
+cv::Mat RenderCarrierFrame(const cv::Mat& qr_frame, const protocol_iso::EncoderOptions& options) {
+    const CarrierLayout layout = BuildCarrierLayout(options);
+
+    cv::Mat carrier(layout.canvas_pixels, layout.canvas_pixels, CV_8UC3, cv::Scalar(255, 255, 255));
+    cv::Mat qr_scaled;
+    cv::resize(qr_frame, qr_scaled, cv::Size(layout.qr_size, layout.qr_size), 0.0, 0.0, cv::INTER_NEAREST);
+    cv::cvtColor(qr_scaled, qr_scaled, cv::COLOR_GRAY2BGR);
+    qr_scaled.copyTo(carrier(cv::Rect(layout.qr_x, layout.qr_y, layout.qr_size, layout.qr_size)));
+
+    if (options.enable_carrier_markers) {
+        const cv::Mat marker = RenderMarker(layout.marker_size, false);
+        const cv::Mat marker_br = RenderMarker(layout.marker_size, true);
+        marker.copyTo(carrier(cv::Rect(layout.marker_margin,
+                                       layout.marker_margin,
+                                       layout.marker_size,
+                                       layout.marker_size)));
+        marker.copyTo(carrier(cv::Rect(layout.canvas_pixels - layout.marker_margin - layout.marker_size,
+                                       layout.marker_margin,
+                                       layout.marker_size,
+                                       layout.marker_size)));
+        marker.copyTo(carrier(cv::Rect(layout.marker_margin,
+                                       layout.canvas_pixels - layout.marker_margin - layout.marker_size,
+                                       layout.marker_size,
+                                       layout.marker_size)));
+        marker_br.copyTo(carrier(cv::Rect(layout.canvas_pixels - layout.marker_margin - layout.marker_size,
+                                          layout.canvas_pixels - layout.marker_margin - layout.marker_size,
+                                          layout.marker_size,
+                                          layout.marker_size)));
+    }
+
+    return carrier;
+}
+
+cv::Mat RenderSampleLayout(const protocol_iso::EncoderOptions& options, const cv::Mat& qr_preview) {
+    const CarrierLayout layout = BuildCarrierLayout(options);
+    cv::Mat layout_image = RenderCarrierFrame(qr_preview, options);
+
+    cv::rectangle(layout_image, cv::Rect(layout.qr_x, layout.qr_y, layout.qr_size, layout.qr_size),
+                  cv::Scalar(40, 120, 220), 3);
+    cv::putText(layout_image, "ISO QR payload region", cv::Point(layout.qr_x + 18, layout.qr_y - 16),
+                cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(40, 120, 220), 2);
+    if (options.enable_carrier_markers) {
+        cv::putText(layout_image, "carrier marker", cv::Point(layout.marker_margin, layout.marker_margin - 12),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(30, 30, 30), 2);
+        cv::putText(layout_image, "carrier marker", cv::Point(layout.canvas_pixels - layout.marker_margin - 180,
+                                                              layout.marker_margin - 12),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(30, 30, 30), 2);
+    }
+    cv::putText(layout_image,
+                "Outer carrier is custom; inner QR remains ISO standard with intact quiet zone.",
+                cv::Point(30, layout.canvas_pixels - 30),
+                cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(20, 20, 20), 2);
+    return layout_image;
+}
+
+std::vector<EncodedFrame> EncodeBytesToFrames(const std::vector<uint8_t>& bytes,
+                                              const protocol_iso::EncoderOptions& options) {
+    std::string error_message;
+    const int max_frame_bytes = DetermineMaxFrameBytes(options, &error_message);
+    if (max_frame_bytes < 0) {
+        throw std::runtime_error(error_message);
+    }
+
+    const int max_payload_bytes = max_frame_bytes - protocol_iso::kFrameOverheadBytes;
+    const std::size_t chunk_size = static_cast<std::size_t>(std::max(1, max_payload_bytes));
+    const std::size_t total_frame_count = std::max<std::size_t>(1U, (bytes.size() + chunk_size - 1U) / chunk_size);
+    if (total_frame_count > 0xFFFFU) {
+        throw std::runtime_error("Input is too large for the current ISO transport header: total_frames exceeds 65535.");
+    }
+    const uint16_t total_frames = static_cast<uint16_t>(total_frame_count);
+
+    std::vector<EncodedFrame> frames;
+    frames.reserve(total_frames);
+
+    if (bytes.empty()) {
+        EncodedFrame frame;
+        frame.header.total_frames = 1;
+        frame.header.payload_len = 0;
+        frame.frame_bytes = protocol_iso::PackFrameBytes(frame.header, {});
+        if (!TryEncodeQrBytes(frame.frame_bytes, options, &frame.qr_frame, &error_message)) {
+            throw std::runtime_error(error_message);
+        }
+        if (!ValidateRenderedScale(frame.qr_frame, options, &error_message)) {
+            throw std::runtime_error(error_message);
+        }
+        frame.carrier_frame = RenderCarrierFrame(frame.qr_frame, options);
+        frames.push_back(std::move(frame));
+        return frames;
+    }
+
+    for (std::size_t offset = 0; offset < bytes.size(); offset += chunk_size) {
+        const std::size_t remaining = bytes.size() - offset;
+        const std::size_t payload_size = std::min<std::size_t>(remaining, chunk_size);
+
+        EncodedFrame frame;
+        frame.payload.assign(bytes.begin() + static_cast<std::ptrdiff_t>(offset),
+                             bytes.begin() + static_cast<std::ptrdiff_t>(offset + payload_size));
+        frame.header.frame_seq = static_cast<uint16_t>(frames.size());
+        frame.header.total_frames = total_frames;
+        frame.header.payload_len = static_cast<uint16_t>(frame.payload.size());
+        frame.frame_bytes = protocol_iso::PackFrameBytes(frame.header, frame.payload);
+
+        if (!TryEncodeQrBytes(frame.frame_bytes, options, &frame.qr_frame, &error_message)) {
+            throw std::runtime_error("Failed to encode ISO QR frame " + std::to_string(frames.size()) + ": " +
+                                     error_message);
+        }
+        if (!ValidateRenderedScale(frame.qr_frame, options, &error_message)) {
+            throw std::runtime_error(error_message);
+        }
+        frame.carrier_frame = RenderCarrierFrame(frame.qr_frame, options);
+        frames.push_back(std::move(frame));
+    }
+
+    return frames;
 }
 
 bool WriteManifest(const std::filesystem::path& manifest_path,
                    const std::vector<EncodedFrame>& frames,
+                   const protocol_iso::EncoderOptions& options,
                    std::string* error_message) {
     std::ofstream stream(manifest_path);
     if (!stream.is_open()) {
@@ -117,26 +318,23 @@ bool WriteManifest(const std::filesystem::path& manifest_path,
         return false;
     }
 
-    stream << "file\tframe_seq\tpayload_len\tcrc32_payload\tprotocol_id\tcrc32_header\tmodule_px\tlogical_grid_size\n";
+    stream << "file\tframe_seq\ttotal_frames\tpayload_len\tprofile\tecc\tcanvas_px\tframe_bytes\n";
     for (std::size_t index = 0; index < frames.size(); ++index) {
         stream << FrameFileName(index) << '\t'
                << frames[index].header.frame_seq << '\t'
-               << frames[index].header.payload_len_bytes << '\t'
-               << std::uppercase << std::hex << std::setw(8) << std::setfill('0')
-               << frames[index].header.crc32_payload << std::dec << '\t'
-               << protocol_v1::kProtocolId << '\t'
-               << std::uppercase << std::hex << std::setw(8) << frames[index].header.crc32_header
-               << std::dec << '\t'
-               << protocol_v1::kModulePixels << '\t'
-               << protocol_v1::kLogicalGridSize
-               << std::dec << '\n';
+               << frames[index].header.total_frames << '\t'
+               << frames[index].header.payload_len << '\t'
+               << protocol_iso::ProfileName(options.profile_id) << '\t'
+               << protocol_iso::ErrorCorrectionName(options.error_correction) << '\t'
+               << options.canvas_pixels << '\t'
+               << frames[index].frame_bytes.size() << '\n';
     }
     return true;
 }
 
 bool TryWriteVideoWithOpenCv(const std::vector<EncodedFrame>& frames,
                              const std::filesystem::path& temp_path,
-                             const protocol_v1::EncoderOptions& options,
+                             const protocol_iso::EncoderOptions& options,
                              std::string* error_message) {
     if (frames.empty()) {
         if (error_message != nullptr) {
@@ -145,7 +343,7 @@ bool TryWriteVideoWithOpenCv(const std::vector<EncodedFrame>& frames,
         return false;
     }
 
-    const cv::Size frame_size(frames.front().physical_frame.cols, frames.front().physical_frame.rows);
+    const cv::Size frame_size(frames.front().carrier_frame.cols, frames.front().carrier_frame.rows);
     cv::VideoWriter writer;
     writer.open(temp_path.string(), cv::VideoWriter::fourcc('m', 'p', '4', 'v'),
                 static_cast<double>(options.fps), frame_size, true);
@@ -158,7 +356,7 @@ bool TryWriteVideoWithOpenCv(const std::vector<EncodedFrame>& frames,
 
     for (const EncodedFrame& frame : frames) {
         for (int repeat_index = 0; repeat_index < options.repeat; ++repeat_index) {
-            writer.write(frame.physical_frame);
+            writer.write(frame.carrier_frame);
         }
     }
     writer.release();
@@ -205,7 +403,7 @@ bool TryTranscodeToYuv420p(const std::filesystem::path& input_path,
 
 bool WriteVideo(const std::vector<EncodedFrame>& frames,
                 const std::filesystem::path& output_dir,
-                const protocol_v1::EncoderOptions& options,
+                const protocol_iso::EncoderOptions& options,
                 std::string* error_message) {
     const std::filesystem::path temp_path = output_dir / "demo_temp.mp4";
     const std::filesystem::path output_path = output_dir / "demo.mp4";
@@ -246,37 +444,237 @@ std::vector<uint8_t> MakeSamplePayload(std::size_t payload_size, uint8_t seed) {
     return payload;
 }
 
-void WriteSampleFrame(const std::filesystem::path& path,
-                      uint16_t frame_seq,
-                      const std::vector<uint8_t>& payload,
-                      int module_pixels) {
-    const FrameHeader header = MakeHeader(frame_seq, payload);
-    const cv::Mat logical = RenderLogicalFrame(header, payload);
-    const cv::Mat physical = RenderPhysicalFrame(logical, module_pixels);
-    cv::imwrite(path.string(), physical);
+cv::Point2f AnchorPointForCorner(const cv::RotatedRect& rect, int corner_index) {
+    std::array<cv::Point2f, 4> points;
+    rect.points(points.data());
+
+    auto score = [&](const cv::Point2f& point) {
+        switch (corner_index) {
+            case 0:
+                return point.x + point.y;
+            case 1:
+                return -point.x + point.y;
+            case 2:
+                return point.x - point.y;
+            case 3:
+                return -(point.x + point.y);
+            default:
+                return point.x + point.y;
+        }
+    };
+
+    return *std::min_element(points.begin(), points.end(),
+                             [&](const cv::Point2f& left, const cv::Point2f& right) {
+                                 return score(left) < score(right);
+                             });
 }
 
-int CellToPixel(int coordinate, int module_pixels) {
-    return protocol_v1::kQuietZonePixels + coordinate * module_pixels;
-}
-
-cv::Mat BuildPreviewLogicalFrame() {
-    cv::Mat logical_frame(protocol_v1::kLogicalGridSize, protocol_v1::kLogicalGridSize, CV_8UC1,
-                          cv::Scalar(255));
-
-    DrawFinder(logical_frame, kFinderTopLeftOrigin, kFinderTopLeftOrigin, false);
-    DrawFinder(logical_frame, kFinderTopRightOrigin, kFinderTopLeftOrigin, false);
-    DrawFinder(logical_frame, kFinderTopLeftOrigin, kFinderBottomLeftOrigin, false);
-    DrawFinder(logical_frame, kFinderTopRightOrigin, kFinderTopRightOrigin, true);
-    DrawTimingPatterns(logical_frame);
-    DrawAlignment(logical_frame);
-
-    for (const GridPoint& cell : protocol_v1::PayloadCells()) {
-        const bool black = ((cell.x + cell.y) % 2) == 0;
-        SetCell(logical_frame, cell.x, cell.y, black);
+bool TryWarpCarrier(const cv::Mat& frame,
+                    const protocol_iso::EncoderOptions& options,
+                    cv::Mat* warped_frame,
+                    cv::Mat* qr_crop,
+                    std::string* error_message) {
+    if (!options.enable_carrier_markers) {
+        if (error_message != nullptr) {
+            *error_message = "Carrier markers are disabled.";
+        }
+        return false;
     }
 
-    return logical_frame;
+    cv::Mat gray;
+    cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
+    cv::Mat binary;
+    cv::threshold(gray, binary, 0, 255, cv::THRESH_BINARY_INV | cv::THRESH_OTSU);
+
+    std::vector<std::vector<cv::Point>> contours;
+    cv::findContours(binary, contours, cv::RETR_LIST, cv::CHAIN_APPROX_SIMPLE);
+
+    std::array<std::optional<cv::RotatedRect>, 4> best_rects;
+    std::array<double, 4> best_areas = {0.0, 0.0, 0.0, 0.0};
+
+    for (const std::vector<cv::Point>& contour : contours) {
+        const double area = cv::contourArea(contour);
+        if (area < frame.cols * frame.rows * 0.0015) {
+            continue;
+        }
+
+        const cv::RotatedRect rect = cv::minAreaRect(contour);
+        const float width = rect.size.width;
+        const float height = rect.size.height;
+        if (width < 20.0F || height < 20.0F) {
+            continue;
+        }
+
+        const float aspect = width > height ? width / height : height / width;
+        if (aspect > 1.35F) {
+            continue;
+        }
+
+        const cv::Point2f center = rect.center;
+        int corner_index = -1;
+        if (center.x < frame.cols * 0.35F && center.y < frame.rows * 0.35F) {
+            corner_index = 0;
+        } else if (center.x > frame.cols * 0.65F && center.y < frame.rows * 0.35F) {
+            corner_index = 1;
+        } else if (center.x < frame.cols * 0.35F && center.y > frame.rows * 0.65F) {
+            corner_index = 2;
+        } else if (center.x > frame.cols * 0.65F && center.y > frame.rows * 0.65F) {
+            corner_index = 3;
+        }
+        if (corner_index < 0) {
+            continue;
+        }
+
+        if (area > best_areas[corner_index]) {
+            best_areas[corner_index] = area;
+            best_rects[corner_index] = rect;
+        }
+    }
+
+    for (const auto& rect : best_rects) {
+        if (!rect.has_value()) {
+            if (error_message != nullptr) {
+                *error_message = "Failed to detect all four carrier corner markers.";
+            }
+            return false;
+        }
+    }
+
+    const CarrierLayout layout = BuildCarrierLayout(options);
+    std::array<cv::Point2f, 4> src = {
+        AnchorPointForCorner(*best_rects[0], 0),
+        AnchorPointForCorner(*best_rects[1], 1),
+        AnchorPointForCorner(*best_rects[2], 2),
+        AnchorPointForCorner(*best_rects[3], 3),
+    };
+    std::array<cv::Point2f, 4> dst = {
+        cv::Point2f(0.0F, 0.0F),
+        cv::Point2f(static_cast<float>(layout.canvas_pixels - 1), 0.0F),
+        cv::Point2f(0.0F, static_cast<float>(layout.canvas_pixels - 1)),
+        cv::Point2f(static_cast<float>(layout.canvas_pixels - 1), static_cast<float>(layout.canvas_pixels - 1)),
+    };
+
+    const cv::Mat transform = cv::getPerspectiveTransform(src.data(), dst.data());
+    cv::Mat warped;
+    cv::warpPerspective(frame, warped, transform, cv::Size(layout.canvas_pixels, layout.canvas_pixels));
+
+    if (warped_frame != nullptr) {
+        *warped_frame = warped;
+    }
+    if (qr_crop != nullptr) {
+        *qr_crop = warped(cv::Rect(layout.qr_x, layout.qr_y, layout.qr_size, layout.qr_size)).clone();
+    }
+    return true;
+}
+
+std::vector<uint8_t> TryDecodeWithDetector(const cv::Mat& image,
+                                           std::string* method,
+                                           std::string* message) {
+    cv::QRCodeDetector detector;
+    detector.setUseAlignmentMarkers(true);
+    cv::Mat straight_qr;
+    const std::string decoded = detector.detectAndDecode(image, cv::noArray(), straight_qr);
+    if (!decoded.empty()) {
+        if (method != nullptr) {
+            *method = "direct";
+        }
+        if (message != nullptr) {
+            *message = "Decoded with QRCodeDetector.";
+        }
+        return StringToBytes(decoded);
+    }
+
+    cv::QRCodeDetectorAruco aruco_detector;
+    const std::string fallback = aruco_detector.detectAndDecode(image, cv::noArray(), straight_qr);
+    if (!fallback.empty()) {
+        if (method != nullptr) {
+            *method = "aruco";
+        }
+        if (message != nullptr) {
+            *message = "Decoded with QRCodeDetectorAruco.";
+        }
+        return StringToBytes(fallback);
+    }
+
+    return {};
+}
+
+DecodeAttemptResult TryDecodeFrame(const cv::Mat& frame, const protocol_iso::EncoderOptions& options) {
+    DecodeAttemptResult result;
+
+    std::string method;
+    std::string message;
+    std::vector<uint8_t> decoded = TryDecodeWithDetector(frame, &method, &message);
+    if (!decoded.empty()) {
+        result.success = true;
+        result.method = method;
+        result.message = message;
+        result.frame_bytes = std::move(decoded);
+        return result;
+    }
+
+    cv::Mat warped;
+    cv::Mat qr_crop;
+    std::string warp_error;
+    if (!TryWarpCarrier(frame, options, &warped, &qr_crop, &warp_error)) {
+        result.message = warp_error;
+        return result;
+    }
+
+    decoded = TryDecodeWithDetector(qr_crop, &method, &message);
+    if (!decoded.empty()) {
+        result.success = true;
+        result.method = "warped-" + method;
+        result.message = message;
+        result.frame_bytes = std::move(decoded);
+        result.warped_frame = warped;
+        result.qr_crop = qr_crop;
+        return result;
+    }
+
+    result.message = "Carrier warp succeeded, but QR decode still failed.";
+    result.warped_frame = warped;
+    result.qr_crop = qr_crop;
+    return result;
+}
+
+std::vector<std::filesystem::path> CollectImageFrames(const std::filesystem::path& input_path) {
+    std::vector<std::filesystem::path> paths;
+    for (const auto& entry : std::filesystem::directory_iterator(input_path)) {
+        if (!entry.is_regular_file()) {
+            continue;
+        }
+        const std::string extension = entry.path().extension().string();
+        if (extension == ".png" || extension == ".jpg" || extension == ".jpeg" || extension == ".bmp") {
+            paths.push_back(entry.path());
+        }
+    }
+    std::sort(paths.begin(), paths.end());
+    return paths;
+}
+
+bool WriteDecodeReport(const std::filesystem::path& report_path,
+                       const std::vector<DecodedFrameReport>& reports,
+                       std::string* error_message) {
+    std::ofstream stream(report_path);
+    if (!stream.is_open()) {
+        if (error_message != nullptr) {
+            *error_message = "Failed to write decode report: " + report_path.string();
+        }
+        return false;
+    }
+
+    stream << "source_index\tsuccess\tmethod\tframe_seq\ttotal_frames\tpayload_len\tmessage\n";
+    for (const DecodedFrameReport& report : reports) {
+        stream << report.source_index << '\t'
+               << (report.success ? "true" : "false") << '\t'
+               << report.method << '\t'
+               << report.frame_seq << '\t'
+               << report.total_frames << '\t'
+               << report.payload_len << '\t'
+               << report.message << '\n';
+    }
+    return true;
 }
 
 }  // namespace
@@ -299,263 +697,307 @@ std::vector<uint8_t> ReadFileBytes(const std::filesystem::path& input_path) {
     return bytes;
 }
 
-std::vector<EncodedFrame> EncodeBytesToFrames(const std::vector<uint8_t>& bytes,
-                                              const protocol_v1::EncoderOptions& options) {
-    const int chunk_size = std::min(options.max_payload_bytes, protocol_v1::kMaxPayloadBytes);
-    std::vector<EncodedFrame> frames;
-
-    if (bytes.empty()) {
-        EncodedFrame frame;
-        frame.header = MakeHeader(0, {});
-        frame.logical_frame = RenderLogicalFrame(frame.header, {});
-        frame.physical_frame = RenderPhysicalFrame(frame.logical_frame, options.module_pixels);
-        frames.push_back(frame);
-        return frames;
-    }
-
-    for (std::size_t offset = 0; offset < bytes.size(); offset += static_cast<std::size_t>(chunk_size)) {
-        const std::size_t remaining = bytes.size() - offset;
-        const std::size_t payload_size = std::min<std::size_t>(remaining, static_cast<std::size_t>(chunk_size));
-        std::vector<uint8_t> payload(bytes.begin() + static_cast<std::ptrdiff_t>(offset),
-                                     bytes.begin() + static_cast<std::ptrdiff_t>(offset + payload_size));
-
-        EncodedFrame frame;
-        frame.payload = payload;
-        frame.header = MakeHeader(static_cast<uint16_t>(frames.size() & 0xFFFFU), frame.payload);
-        frame.logical_frame = RenderLogicalFrame(frame.header, frame.payload);
-        frame.physical_frame = RenderPhysicalFrame(frame.logical_frame, options.module_pixels);
-        frames.push_back(std::move(frame));
-    }
-
-    return frames;
-}
-
-cv::Mat RenderLogicalFrame(const protocol_v1::FrameHeader& header, const std::vector<uint8_t>& payload) {
-    if (payload.size() > static_cast<std::size_t>(protocol_v1::kMaxPayloadBytes)) {
-        throw std::runtime_error("Payload exceeds V1.6 limit of 1024 bytes.");
-    }
-
-    cv::Mat logical_frame(protocol_v1::kLogicalGridSize, protocol_v1::kLogicalGridSize, CV_8UC1,
-                          cv::Scalar(255));
-
-    DrawFinder(logical_frame, kFinderTopLeftOrigin, kFinderTopLeftOrigin, false);
-    DrawFinder(logical_frame, kFinderTopRightOrigin, kFinderTopLeftOrigin, false);
-    DrawFinder(logical_frame, kFinderTopLeftOrigin, kFinderBottomLeftOrigin, false);
-    DrawFinder(logical_frame, kFinderTopRightOrigin, kFinderTopRightOrigin, true);
-    DrawTimingPatterns(logical_frame);
-    DrawAlignment(logical_frame);
-
-    const std::vector<bool> header_bits = protocol_v1::PackHeaderBits(header);
-    if (header_bits.size() != static_cast<std::size_t>(protocol_v1::kHeaderBits)) {
-        throw std::runtime_error("Packed header does not match the required 160-bit size.");
-    }
-
-    std::size_t bit_index = 0;
-    for (int row = 0; row < protocol_v1::kHeaderHeightModules; ++row) {
-        for (int col = 0; col < protocol_v1::kHeaderWidthModules; ++col) {
-            const int x = protocol_v1::kHeaderOriginX + col;
-            const int y = protocol_v1::kHeaderOriginY + row;
-            SetCell(logical_frame, x, y, header_bits[bit_index++]);
-        }
-    }
-
-    const std::vector<bool> payload_bits = protocol_v1::BytesToBitsMsbFirst(payload, payload.size());
-    const std::vector<GridPoint> payload_cells = protocol_v1::PayloadCells();
-    if (payload_bits.size() > payload_cells.size()) {
-        throw std::runtime_error("Payload bits exceed drawable payload cells.");
-    }
-
-    for (std::size_t index = 0; index < payload_bits.size(); ++index) {
-        SetCell(logical_frame, payload_cells[index].x, payload_cells[index].y, payload_bits[index]);
-    }
-
-    return logical_frame;
-}
-
-cv::Mat RenderPhysicalFrame(const cv::Mat& logical_frame, int module_pixels) {
-    cv::Mat body_frame;
-    cv::resize(logical_frame, body_frame,
-               cv::Size(logical_frame.cols * module_pixels, logical_frame.rows * module_pixels),
-               0.0, 0.0, cv::INTER_NEAREST);
-    cv::cvtColor(body_frame, body_frame, cv::COLOR_GRAY2BGR);
-
-    cv::Mat physical_frame(protocol_v1::kPhysicalOutputPixels,
-                           protocol_v1::kPhysicalOutputPixels,
-                           CV_8UC3,
-                           cv::Scalar(255, 255, 255));
-    const int offset = (protocol_v1::kPhysicalOutputPixels - body_frame.cols) / 2;
-    body_frame.copyTo(physical_frame(cv::Rect(offset, offset, body_frame.cols, body_frame.rows)));
-    return physical_frame;
-}
-
-cv::Mat RenderLayoutGuide(int module_pixels) {
-    const FrameHeader empty_header = MakeHeader(0, {});
-    cv::Mat layout_panel = RenderPhysicalFrame(RenderLogicalFrame(empty_header, {}), module_pixels);
-    cv::Mat sample_panel = RenderPhysicalFrame(BuildPreviewLogicalFrame(), module_pixels);
-
-    const int grid_px = protocol_v1::kLogicalGridSize * module_pixels;
-    const int grid_offset = (protocol_v1::kPhysicalOutputPixels - grid_px) / 2;
-
-    cv::rectangle(layout_panel,
-                  cv::Rect(grid_offset, grid_offset, grid_px, grid_px),
-                  cv::Scalar(120, 120, 120), 2);
-    cv::rectangle(layout_panel,
-                  cv::Rect(CellToPixel(0, module_pixels),
-                           CellToPixel(0, module_pixels),
-                           protocol_v1::kFinderReserveSizeModules * module_pixels,
-                           protocol_v1::kFinderReserveSizeModules * module_pixels),
-                  cv::Scalar(90, 90, 180), 2);
-    cv::rectangle(layout_panel,
-                  cv::Rect(CellToPixel(protocol_v1::kHeaderOriginX, module_pixels),
-                           CellToPixel(protocol_v1::kHeaderOriginY, module_pixels),
-                           protocol_v1::kHeaderWidthModules * module_pixels,
-                           protocol_v1::kHeaderHeightModules * module_pixels),
-                  cv::Scalar(0, 0, 220), 2);
-    cv::rectangle(layout_panel,
-                  cv::Rect(CellToPixel(8, module_pixels),
-                           CellToPixel(8, module_pixels),
-                           (100 - 8) * module_pixels,
-                           (100 - 8) * module_pixels),
-                  cv::Scalar(20, 60, 220), 2);
-    cv::rectangle(layout_panel,
-                  cv::Rect(CellToPixel(protocol_v1::kAlignmentOriginX, module_pixels),
-                           CellToPixel(protocol_v1::kAlignmentOriginY, module_pixels),
-                           protocol_v1::kAlignmentSizeModules * module_pixels,
-                           protocol_v1::kAlignmentSizeModules * module_pixels),
-                  cv::Scalar(0, 160, 140), 2);
-    cv::line(layout_panel,
-             cv::Point(CellToPixel(protocol_v1::kTimingStart, module_pixels), CellToPixel(protocol_v1::kTimingHorizontalY, module_pixels)),
-             cv::Point(CellToPixel(protocol_v1::kTimingEnd + 1, module_pixels), CellToPixel(protocol_v1::kTimingHorizontalY, module_pixels)),
-             cv::Scalar(255, 120, 0), 2);
-    cv::line(layout_panel,
-             cv::Point(CellToPixel(protocol_v1::kTimingVerticalX, module_pixels), CellToPixel(protocol_v1::kTimingStart, module_pixels)),
-             cv::Point(CellToPixel(protocol_v1::kTimingVerticalX, module_pixels), CellToPixel(protocol_v1::kTimingEnd + 1, module_pixels)),
-             cv::Scalar(255, 120, 0), 2);
-
-    cv::putText(layout_panel, "Quiet zone: 6 modules (54 px)", cv::Point(18, 34), cv::FONT_HERSHEY_SIMPLEX,
-                0.6, cv::Scalar(20, 20, 20), 2);
-    cv::putText(layout_panel, "Grid: 108x108, module: 9 px (preview scaled)", cv::Point(18, 62), cv::FONT_HERSHEY_SIMPLEX,
-                0.6, cv::Scalar(20, 20, 20), 2);
-    cv::putText(layout_panel, "Finder reserve: 8x8 each", cv::Point(40, 140), cv::FONT_HERSHEY_SIMPLEX,
-                0.58, cv::Scalar(90, 90, 180), 2);
-    cv::putText(layout_panel, "Header: 16x10 (160 bits)", cv::Point(130, 140), cv::FONT_HERSHEY_SIMPLEX,
-                0.58, cv::Scalar(0, 0, 220), 2);
-    cv::putText(layout_panel, "Payload scan area: 108x108 minus reserved mask", cv::Point(140, 175), cv::FONT_HERSHEY_SIMPLEX,
-                0.58, cv::Scalar(20, 60, 220), 2);
-    cv::putText(layout_panel, "Timing H: y=24, x=8..99", cv::Point(140, 228), cv::FONT_HERSHEY_SIMPLEX,
-                0.58, cv::Scalar(255, 120, 0), 2);
-    cv::putText(layout_panel, "Timing V: x=24, y=8..99", cv::Point(140, 870), cv::FONT_HERSHEY_SIMPLEX,
-                0.58, cv::Scalar(255, 120, 0), 2);
-    cv::putText(layout_panel, "Alignment 5x5", cv::Point(690, 780), cv::FONT_HERSHEY_SIMPLEX,
-                0.58, cv::Scalar(0, 160, 140), 2);
-    cv::putText(layout_panel, "BR finder: 3x3 center inverted", cv::Point(520, 920), cv::FONT_HERSHEY_SIMPLEX,
-                0.58, cv::Scalar(20, 20, 20), 2);
-    cv::putText(layout_panel, "Theoretical payload: 1380 bytes", cv::Point(140, 202), cv::FONT_HERSHEY_SIMPLEX,
-                0.58, cv::Scalar(180, 60, 60), 2);
-
-    const int canvas_width = 1640;
-    const int canvas_height = 920;
-    cv::Mat canvas(canvas_height, canvas_width, CV_8UC3, cv::Scalar(244, 244, 244));
-    layout_panel.copyTo(canvas(cv::Rect(18, 18, layout_panel.cols, layout_panel.rows)));
-    sample_panel.copyTo(canvas(cv::Rect(830, 18, sample_panel.cols, sample_panel.rows)));
-    cv::putText(canvas, "V1.6-108-4F Layout with Region Specs", cv::Point(55, 885), cv::FONT_HERSHEY_SIMPLEX,
-                0.95, cv::Scalar(10, 10, 10), 2);
-    cv::putText(canvas, "V1.6-108-4F Sample Render", cv::Point(1060, 885), cv::FONT_HERSHEY_SIMPLEX,
-                0.95, cv::Scalar(10, 10, 10), 2);
-    return canvas;
-}
-
-bool WriteProtocolSamples(const std::filesystem::path& output_dir,
-                          const protocol_v1::EncoderOptions& options,
-                          std::string* error_message) {
+bool WriteIsoSamples(const std::filesystem::path& output_dir,
+                     const protocol_iso::EncoderOptions& options,
+                     std::string* error_message) {
     if (!EnsureDirectory(output_dir, error_message)) {
         return false;
     }
 
-    const std::filesystem::path layout_path = output_dir / "layout_guide.png";
-    const std::filesystem::path full_path = output_dir / "sample_full_frame.png";
-    const std::filesystem::path short_path = output_dir / "sample_short_frame.png";
-    const std::filesystem::path manifest_path = output_dir / "sample_manifest.tsv";
-
-    cv::imwrite(layout_path.string(), RenderLayoutGuide(options.module_pixels));
-    WriteSampleFrame(full_path, 0, MakeSamplePayload(protocol_v1::kMaxPayloadBytes, 0x11U), options.module_pixels);
-    WriteSampleFrame(short_path, 1, MakeSamplePayload(173, 0x7AU), options.module_pixels);
-
-    std::ofstream manifest(manifest_path);
+    std::ofstream manifest(output_dir / "sample_manifest.tsv");
     if (!manifest.is_open()) {
         if (error_message != nullptr) {
-            *error_message = "Failed to write sample manifest.";
+            *error_message = "Failed to write ISO sample manifest.";
+        }
+        return false;
+    }
+    manifest << "file\tprofile\tversion\tlogical_grid\tecc\tcanvas_px\tmax_frame_bytes\tmax_payload_bytes\n";
+
+    for (const protocol_iso::Profile& profile : protocol_iso::SupportedProfiles()) {
+        protocol_iso::EncoderOptions profile_options = options;
+        profile_options.profile_id = profile.id;
+
+        std::string capacity_error;
+        const int max_frame_bytes = DetermineMaxFrameBytes(profile_options, &capacity_error);
+        if (max_frame_bytes < 0) {
+            if (error_message != nullptr) {
+                *error_message = capacity_error;
+            }
+            return false;
+        }
+
+        const std::size_t sample_payload_len = static_cast<std::size_t>(std::min(32, max_frame_bytes - protocol_iso::kFrameOverheadBytes));
+        EncodedFrame frame;
+        frame.payload = MakeSamplePayload(sample_payload_len, static_cast<uint8_t>(profile.logical_size & 0xFFU));
+        frame.header.total_frames = 1;
+        frame.header.payload_len = static_cast<uint16_t>(frame.payload.size());
+        frame.frame_bytes = protocol_iso::PackFrameBytes(frame.header, frame.payload);
+
+        std::string encode_error;
+        if (!TryEncodeQrBytes(frame.frame_bytes, profile_options, &frame.qr_frame, &encode_error)) {
+            if (error_message != nullptr) {
+                *error_message = encode_error;
+            }
+            return false;
+        }
+        if (!ValidateRenderedScale(frame.qr_frame, profile_options, &encode_error)) {
+            if (error_message != nullptr) {
+                *error_message = encode_error;
+            }
+            return false;
+        }
+        frame.carrier_frame = RenderCarrierFrame(frame.qr_frame, profile_options);
+
+        const std::string qr_name = "sample_" + protocol_iso::ProfileName(profile.id) + "_symbol.png";
+        const std::string carrier_name = "sample_" + protocol_iso::ProfileName(profile.id) + "_carrier.png";
+        const std::string layout_name = "sample_" + protocol_iso::ProfileName(profile.id) + "_layout.png";
+        cv::imwrite((output_dir / qr_name).string(), frame.qr_frame);
+        cv::imwrite((output_dir / carrier_name).string(), frame.carrier_frame);
+        cv::imwrite((output_dir / layout_name).string(), RenderSampleLayout(profile_options, frame.qr_frame));
+
+        manifest << qr_name << '\t'
+                 << profile.name << '\t'
+                 << profile.version << '\t'
+                 << profile.logical_size << '\t'
+                 << protocol_iso::ErrorCorrectionName(profile_options.error_correction) << '\t'
+                 << profile_options.canvas_pixels << '\t'
+                 << max_frame_bytes << '\t'
+                 << (max_frame_bytes - protocol_iso::kFrameOverheadBytes) << '\n';
+    }
+
+    return true;
+}
+
+bool WriteIsoPackage(const std::filesystem::path& input_path,
+                     const std::filesystem::path& output_dir,
+                     const protocol_iso::EncoderOptions& options,
+                     std::string* error_message) {
+    if (!EnsureDirectory(output_dir, error_message)) {
+        return false;
+    }
+
+    const std::filesystem::path qr_dir = output_dir / "frames" / "qr";
+    const std::filesystem::path carrier_dir = output_dir / "frames" / "carrier";
+    const std::filesystem::path sample_dir = output_dir / "protocol_samples";
+    if (!EnsureDirectory(qr_dir, error_message) ||
+        !EnsureDirectory(carrier_dir, error_message) ||
+        !EnsureDirectory(sample_dir, error_message)) {
+        return false;
+    }
+
+    const std::vector<uint8_t> input_bytes = ReadFileBytes(input_path);
+    std::vector<EncodedFrame> frames;
+    try {
+        frames = EncodeBytesToFrames(input_bytes, options);
+    } catch (const std::exception& error) {
+        if (error_message != nullptr) {
+            *error_message = error.what();
         }
         return false;
     }
 
-    const auto full_payload = MakeSamplePayload(protocol_v1::kMaxPayloadBytes, 0x11U);
-    const auto short_payload = MakeSamplePayload(173, 0x7AU);
-    const auto full_header = MakeHeader(0, full_payload);
-    const auto short_header = MakeHeader(1, short_payload);
+    if (!WriteIsoSamples(sample_dir, options, error_message)) {
+        return false;
+    }
 
-    manifest << "file\tframe_seq\tpayload_len\tcrc32_payload\tprotocol_id\tcrc32_header\tmodule_px\tlogical_grid_size\n";
-    manifest << "sample_full_frame.png\t0\t" << full_payload.size() << '\t'
-             << std::uppercase << std::hex << std::setw(8) << std::setfill('0')
-             << full_header.crc32_payload << std::dec << '\t'
-             << protocol_v1::kProtocolId << '\t' << std::setw(8) << full_header.crc32_header << std::dec << '\t'
-             << protocol_v1::kModulePixels << '\t' << protocol_v1::kLogicalGridSize << '\n';
-    manifest << "sample_short_frame.png\t1\t" << short_payload.size() << '\t'
-             << std::uppercase << std::hex << std::setw(8) << std::setfill('0')
-             << short_header.crc32_payload << std::dec << '\t'
-             << protocol_v1::kProtocolId << '\t' << std::setw(8) << short_header.crc32_header << std::dec << '\t'
-             << protocol_v1::kModulePixels << '\t' << protocol_v1::kLogicalGridSize << '\n';
-    return true;
+    for (std::size_t index = 0; index < frames.size(); ++index) {
+        cv::imwrite((qr_dir / FrameFileName(index)).string(), frames[index].qr_frame);
+        cv::imwrite((carrier_dir / FrameFileName(index)).string(), frames[index].carrier_frame);
+    }
+
+    if (!WriteManifest(output_dir / "frame_manifest.tsv", frames, options, error_message)) {
+        return false;
+    }
+
+    std::string capacity_error;
+    const int max_frame_bytes = DetermineMaxFrameBytes(options, &capacity_error);
+    if (max_frame_bytes < 0) {
+        if (error_message != nullptr) {
+            *error_message = capacity_error;
+        }
+        return false;
+    }
+
+    const protocol_iso::Profile profile = protocol_iso::ProfileFromId(options.profile_id);
+    std::ofstream(output_dir / "input_info.txt")
+        << "protocol=ISO/IEC 18004 QR Code Model 2\n"
+        << "profile=" << profile.name << '\n'
+        << "version=" << profile.version << '\n'
+        << "logical_grid=" << profile.logical_size << '\n'
+        << "ecc=" << protocol_iso::ErrorCorrectionName(options.error_correction) << '\n'
+        << "canvas_px=" << options.canvas_pixels << '\n'
+        << "input_path=" << input_path.string() << '\n'
+        << "input_bytes=" << input_bytes.size() << '\n'
+        << "frame_count=" << frames.size() << '\n'
+        << "max_frame_bytes=" << max_frame_bytes << '\n'
+        << "max_payload_bytes=" << (max_frame_bytes - protocol_iso::kFrameOverheadBytes) << '\n'
+        << "fps=" << options.fps << '\n'
+        << "repeat=" << options.repeat << '\n'
+        << "carrier_markers=" << (options.enable_carrier_markers ? "true" : "false") << '\n';
+
+    return WriteVideo(frames, output_dir, options, error_message);
 }
 
-bool WriteDemoPackage(const std::filesystem::path& input_path,
+bool DecodeIsoPackage(const std::filesystem::path& input_path,
                       const std::filesystem::path& output_dir,
-                      const protocol_v1::EncoderOptions& options,
+                      const protocol_iso::EncoderOptions& options,
                       std::string* error_message) {
     if (!EnsureDirectory(output_dir, error_message)) {
         return false;
     }
 
-    const std::filesystem::path logical_dir = output_dir / "frames" / "logical";
-    const std::filesystem::path physical_dir = output_dir / "frames" / "physical";
-    const std::filesystem::path protocol_dir = output_dir / "protocol_samples";
-
-    if (!EnsureDirectory(logical_dir, error_message) ||
-        !EnsureDirectory(physical_dir, error_message) ||
-        !EnsureDirectory(protocol_dir, error_message)) {
+    const std::filesystem::path source_dir = output_dir / "decode_debug" / "source";
+    const std::filesystem::path warped_dir = output_dir / "decode_debug" / "warped";
+    const std::filesystem::path crop_dir = output_dir / "decode_debug" / "qr_crop";
+    if (!EnsureDirectory(source_dir, error_message) ||
+        !EnsureDirectory(warped_dir, error_message) ||
+        !EnsureDirectory(crop_dir, error_message)) {
         return false;
     }
 
-    const std::vector<uint8_t> input_bytes = ReadFileBytes(input_path);
-    const std::vector<EncodedFrame> frames = EncodeBytesToFrames(input_bytes, options);
+    std::vector<cv::Mat> frames;
+    if (std::filesystem::is_directory(input_path)) {
+        for (const std::filesystem::path& path : CollectImageFrames(input_path)) {
+            cv::Mat frame = cv::imread(path.string(), cv::IMREAD_COLOR);
+            if (!frame.empty()) {
+                frames.push_back(frame);
+            }
+        }
+    } else {
+        cv::VideoCapture capture(input_path.string());
+        if (!capture.isOpened()) {
+            if (error_message != nullptr) {
+                *error_message = "Failed to open input video: " + input_path.string();
+            }
+            return false;
+        }
 
-    if (!WriteProtocolSamples(protocol_dir, options, error_message)) {
+        cv::Mat frame;
+        while (capture.read(frame)) {
+            if (!frame.empty()) {
+                frames.push_back(frame.clone());
+            }
+        }
+    }
+
+    if (frames.empty()) {
+        if (error_message != nullptr) {
+            *error_message = "No frames could be read from the decode input.";
+        }
         return false;
     }
+
+    std::vector<DecodedFrameReport> reports;
+    reports.reserve(frames.size());
+
+    std::map<uint16_t, std::vector<uint8_t>> payloads_by_seq;
+    std::optional<uint16_t> expected_total_frames;
 
     for (std::size_t index = 0; index < frames.size(); ++index) {
-        const std::filesystem::path logical_path = logical_dir / FrameFileName(index);
-        const std::filesystem::path physical_path = physical_dir / FrameFileName(index);
-        cv::imwrite(logical_path.string(), frames[index].logical_frame);
-        cv::imwrite(physical_path.string(), frames[index].physical_frame);
+        cv::imwrite((source_dir / FrameFileName(index)).string(), frames[index]);
+
+        DecodeAttemptResult attempt = TryDecodeFrame(frames[index], options);
+        DecodedFrameReport report;
+        report.source_index = static_cast<int>(index);
+        report.method = attempt.method.empty() ? "none" : attempt.method;
+        report.message = attempt.message;
+
+        if (!attempt.warped_frame.empty()) {
+            cv::imwrite((warped_dir / FrameFileName(index)).string(), attempt.warped_frame);
+        }
+        if (!attempt.qr_crop.empty()) {
+            cv::imwrite((crop_dir / FrameFileName(index)).string(), attempt.qr_crop);
+        }
+
+        if (!attempt.success) {
+            reports.push_back(std::move(report));
+            continue;
+        }
+
+        protocol_iso::FrameHeader header;
+        std::vector<uint8_t> payload;
+        std::string parse_error;
+        if (!protocol_iso::ParseFrameBytes(attempt.frame_bytes, &header, &payload, &parse_error)) {
+            report.message = parse_error;
+            reports.push_back(std::move(report));
+            continue;
+        }
+
+        report.success = true;
+        report.frame_seq = header.frame_seq;
+        report.total_frames = header.total_frames;
+        report.payload_len = header.payload_len;
+        report.message = protocol_iso::HeaderToString(header);
+
+        if (!expected_total_frames.has_value()) {
+            expected_total_frames = header.total_frames;
+        } else if (expected_total_frames.value() != header.total_frames) {
+            report.success = false;
+            report.message = "Inconsistent total_frames across decoded frames.";
+            reports.push_back(std::move(report));
+            continue;
+        }
+
+        if (payloads_by_seq.find(header.frame_seq) == payloads_by_seq.end()) {
+            payloads_by_seq.emplace(header.frame_seq, std::move(payload));
+        }
+
+        reports.push_back(std::move(report));
     }
 
-    if (!WriteManifest(output_dir / "frame_manifest.tsv", frames, error_message)) {
+    if (!WriteDecodeReport(output_dir / "decode_report.tsv", reports, error_message)) {
         return false;
     }
 
-    std::ofstream(output_dir / "input_info.txt")
-        << "protocol_id=" << protocol_v1::kProtocolId << '\n'
-        << "input_path=" << input_path.string() << '\n'
-        << "input_bytes=" << input_bytes.size() << '\n'
-        << "logical_frames=" << frames.size() << '\n'
-        << "logical_grid_size=" << options.logical_grid_size << '\n'
-        << "module_px=" << options.module_pixels << '\n'
-        << "quiet_zone_modules=" << protocol_v1::kQuietZoneModules << '\n'
-        << "fps=" << options.fps << '\n'
-        << "repeat=" << options.repeat << '\n';
+    if (!expected_total_frames.has_value()) {
+        if (error_message != nullptr) {
+            *error_message = "No valid ISO frames were decoded from the input.";
+        }
+        return false;
+    }
 
-    return WriteVideo(frames, output_dir, options, error_message);
+    std::vector<uint16_t> missing_frames;
+    for (uint16_t frame_seq = 0; frame_seq < expected_total_frames.value(); ++frame_seq) {
+        if (payloads_by_seq.find(frame_seq) == payloads_by_seq.end()) {
+            missing_frames.push_back(frame_seq);
+        }
+    }
+
+    if (!missing_frames.empty()) {
+        std::ofstream(output_dir / "missing_frames.txt")
+            << "Missing frame count=" << missing_frames.size() << '\n';
+        std::ofstream missing_stream(output_dir / "missing_frames.txt", std::ios::app);
+        for (uint16_t frame_seq : missing_frames) {
+            missing_stream << frame_seq << '\n';
+        }
+        if (error_message != nullptr) {
+            *error_message = "Decoded ISO frames are incomplete; see missing_frames.txt.";
+        }
+        return false;
+    }
+
+    std::vector<uint8_t> output_bytes;
+    for (uint16_t frame_seq = 0; frame_seq < expected_total_frames.value(); ++frame_seq) {
+        const std::vector<uint8_t>& payload = payloads_by_seq.at(frame_seq);
+        output_bytes.insert(output_bytes.end(), payload.begin(), payload.end());
+    }
+
+    const std::filesystem::path output_file = output_dir / "output.bin";
+    std::ofstream stream(output_file, std::ios::binary);
+    if (!stream.is_open()) {
+        if (error_message != nullptr) {
+            *error_message = "Failed to write decoded output file: " + output_file.string();
+        }
+        return false;
+    }
+    stream.write(reinterpret_cast<const char*>(output_bytes.data()),
+                 static_cast<std::streamsize>(output_bytes.size()));
+
+    std::ofstream(output_dir / "decode_summary.txt")
+        << "decoded_frames=" << payloads_by_seq.size() << '\n'
+        << "total_frames=" << expected_total_frames.value() << '\n'
+        << "output_bytes=" << output_bytes.size() << '\n';
+    return true;
 }
 
 }  // namespace demo_encoder

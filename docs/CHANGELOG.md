@@ -8,6 +8,33 @@
 - 每条记录至少写明：日期、类型、范围、摘要、兼容性
 - 纯格式化、空白调整、错别字修正可不记录
 
+## 2026-03-09
+
+- Type: `Changed`
+  - Scope: `protocol`
+  - Summary: 将当前有效主线从 `V1.6-108-4F` 自定义编码切换为真实标准 ISO QR 视频传输方案，支持 `iso109/iso145/iso177` 三档 profile 和 `M/Q` 纠错等级
+  - Compatibility: `breaking`
+
+- Type: `Added`
+  - Scope: `code`
+  - Summary: 新增 `protocol_iso.*`，实现 ISO 应用层 header、CRC32、profile 解析，以及围绕 OpenCV QRCodeEncoder/QRCodeDetector 的标准编码与解码链
+  - Compatibility: `breaking`
+
+- Type: `Added`
+  - Scope: `cli`
+  - Summary: CLI 新增 `decode` 命令，并为 `samples/encode/decode` 增加 `--profile`、`--ecc`、`--canvas`、`--fps`、`--repeat`、`--markers` 参数
+  - Compatibility: `breaking`
+
+- Type: `Changed`
+  - Scope: `docs`
+  - Summary: 将 ISO 协议文档升级为当前有效主线文档，文档索引仅保留真实存在且仍有效的条目；旧 `protocol_v1.md` 改为历史参考
+  - Compatibility: `non-breaking`
+
+- Type: `Changed`
+  - Scope: `samples`
+  - Summary: `bin/samples/README.txt` 改为说明当前样例应通过 `Project1 samples` 实时生成，仓库内旧 PNG 视为历史样例而非当前协议基准
+  - Compatibility: `non-breaking`
+
 ## 2026-03-08
 
 - Type: `Added`
