@@ -138,7 +138,7 @@ bool ParseFrameBytes(const std::vector<uint8_t>& frame_bytes,
                      std::string* error_message) {
     if (frame_bytes.size() < static_cast<std::size_t>(kFrameOverheadBytes)) {
         if (error_message != nullptr) {
-            *error_message = "Frame payload is smaller than the ISO application header and CRC32.";
+            *error_message = "frame_too_small";
         }
         return false;
     }
@@ -152,7 +152,7 @@ bool ParseFrameBytes(const std::vector<uint8_t>& frame_bytes,
 
     if (parsed_header.protocol_id != kProtocolId || parsed_header.protocol_version != kProtocolVersion) {
         if (error_message != nullptr) {
-            *error_message = "Frame header protocol id/version does not match the ISO transport profile.";
+            *error_message = "protocol_mismatch";
         }
         return false;
     }
@@ -161,7 +161,7 @@ bool ParseFrameBytes(const std::vector<uint8_t>& frame_bytes,
         static_cast<std::size_t>(kHeaderBytes) + parsed_header.payload_len + static_cast<std::size_t>(kCrcBytes);
     if (frame_bytes.size() != expected_size) {
         if (error_message != nullptr) {
-            *error_message = "Frame length does not match header payload_len.";
+            *error_message = "payload_len_mismatch";
         }
         return false;
     }
@@ -172,8 +172,9 @@ bool ParseFrameBytes(const std::vector<uint8_t>& frame_bytes,
     if (actual_crc32 != expected_crc32) {
         if (error_message != nullptr) {
             std::ostringstream stream;
-            stream << "CRC32 mismatch: expected 0x" << std::uppercase << std::hex << expected_crc32
-                   << ", got 0x" << actual_crc32;
+            stream << "crc_mismatch"
+                   << " expected=0x" << std::uppercase << std::hex << expected_crc32
+                   << " actual=0x" << actual_crc32;
             *error_message = stream.str();
         }
         return false;

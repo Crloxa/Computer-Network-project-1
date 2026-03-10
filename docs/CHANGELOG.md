@@ -8,6 +8,23 @@
 - 每条记录至少写明：日期、类型、范围、摘要、兼容性
 - 纯格式化、空白调整、错别字修正可不记录
 
+## 2026-03-11
+
+- Type: `Changed`
+  - Scope: `decode`
+  - Summary: `DecodeIsoPackage` 改为在成功、缺帧、CRC 错误、无有效帧和读入失败场景下都稳定输出 `decode_report.tsv` 与 `decode_summary.txt`，并将重复帧显式标记为 `duplicate_frame`
+  - Compatibility: `non-breaking`
+
+- Type: `Added`
+  - Scope: `samples`
+  - Summary: 在 `bin/samples/` 新增 `v2_success`、`v2_missing_frame`、`v2_crc_error` 三套当前主线联调基准，以及 `v2_fixture_index.tsv` 与再生成脚本 `scripts/gen_v2_fixtures.py`
+  - Compatibility: `non-breaking`
+
+- Type: `Changed`
+  - Scope: `samples`
+  - Summary: 将旧阶段的 `bin/samples/sample_manifest.tsv` 改名为 `sample_manifest_v1_legacy.tsv`，避免与当前 v2 样例产物的 `sample_manifest.tsv` 命名冲突
+  - Compatibility: `non-breaking`
+
 ## 2026-03-10
 
 - Type: `Added`

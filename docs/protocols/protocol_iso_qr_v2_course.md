@@ -306,12 +306,13 @@ module_pixels = qr_size / qr_frame.cols
 重组规则：
 - 首次成功帧确定 `expected_total_frames`
 - 若后续帧 `total_frames` 不一致，则记为失败
-- 同一 `frame_seq` 仅收第一份 payload，后续重复帧跳过
+- 同一 `frame_seq` 仅收第一份 payload，后续重复帧跳过并在 `decode_report.tsv` 中记为 `duplicate_frame`
 - 最终按 `frame_seq` 从小到大拼接得到 `output.bin`
 
 缺帧行为：
 - 若存在缺失序号，写 `missing_frames.txt`
 - 同时返回错误，不输出“完整解码成功”的结果
+- 即使失败，也必须稳定输出 `decode_report.tsv` 与 `decode_summary.txt`
 
 ## 10. 输出产物
 
@@ -415,13 +416,32 @@ module_pixels = qr_size / qr_frame.cols
 | `message` | 解码或校验信息 |
 
 `decode_summary.txt` 字段：
+- `status`
 - `decoded_frames`
 - `total_frames`
 - `output_bytes`
+- `missing_frames`
 
 `missing_frames.txt`：
-- 第一行记录缺帧数量
+- 第一行固定为 `missing_count=<n>`
 - 后续每行一个缺失的 `frame_seq`
+
+### 10.4 固定联调样例
+
+仓库内固定保留 3 套当前 v2 基准：
+- `bin/samples/v2_success/`
+- `bin/samples/v2_missing_frame/`
+- `bin/samples/v2_crc_error/`
+
+统一参数：
+- `profile=iso133`
+- `ecc=Q`
+- `canvas_px=1440`
+
+用途：
+- `v2_success`：验证 `output.bin == input.bin`
+- `v2_missing_frame`：验证缺帧失败路径和 `missing_frames.txt`
+- `v2_crc_error`：验证 `crc_mismatch` 报告与 CRC 错帧跳过行为
 
 ## 11. 推荐参数与调优建议
 

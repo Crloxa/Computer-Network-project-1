@@ -1,27 +1,48 @@
-`bin/samples/` 下当前已提交的 PNG/TSV 来自旧阶段试验，不再代表现行主线协议。
+`bin/samples/` 现在同时承载两类内容：当前 v2 固定联调基准，以及旧阶段保留的历史参考文件。
 
-当前有效的 ISO 主线样例请使用以下命令实时生成：
-- `Project1 samples out/samples`
+## 当前可直接联调的 v2 基准
 
-运行后会生成：
-- `sample_iso109_symbol.png`
-- `sample_iso109_carrier.png`
-- `sample_iso109_layout.png`
-- `sample_iso133_symbol.png`
-- `sample_iso133_carrier.png`
-- `sample_iso133_layout.png`
-- `sample_iso145_symbol.png`
-- `sample_iso145_carrier.png`
-- `sample_iso145_layout.png`
-- `sample_iso177_symbol.png`
-- `sample_iso177_carrier.png`
-- `sample_iso177_layout.png`
+固定入口：
+- `v2_fixture_index.tsv`
+
+固定基准目录：
+- `v2_success/`
+- `v2_missing_frame/`
+- `v2_crc_error/`
+
+每套目录固定包含：
+- `input.bin`
+- `frames/`
+- `frame_manifest.tsv`
+- `decode_args.txt`
+- `expected_status.txt`
+
+其中：
+- `v2_success/`：完整成功样例，`output.bin` 必须与 `input.bin` 字节完全一致
+- `v2_missing_frame/`：缺一帧样例，必须输出 `missing_frames.txt`
+- `v2_crc_error/`：单帧 CRC 错误样例，必须在 `decode_report.tsv` 中出现 `crc_mismatch`
+
+基准的默认参数固定为：
+- `--profile iso133 --ecc Q --canvas 1440`
+
+重新生成这三套基准：
+- 在具备 `qrcode` 和 `Pillow` 的 Python 环境中运行：`python3 scripts/gen_v2_fixtures.py`
+
+## 运行时样例产物
+
+以下仍然是运行 `Project1 samples out/samples` 时动态生成的产物，不作为仓库内固定回归基准：
+- `sample_<profile>_symbol.png`
+- `sample_<profile>_carrier.png`
+- `sample_<profile>_layout.png`
 - `sample_manifest.tsv`
 - `sample_capacity.tsv`
 
-说明：
-- 中央 QR 为真实标准 ISO QR。
-- 外围 carrier 仅用于视频定位与透视矫正，不属于 QR 本体标准。
-- 当前默认工作点是 `Version 29 / 133x133 + ECC Q`。
-- `sample_capacity.tsv` 会列出 `M/Q/H` 三档标准纠错下的容量矩阵。
-- 旧 `layout_guide.png`、`sample_full_frame.png`、`sample_iso_qr_v2_*`、`sample_manifest_qrx_25_3f1a.tsv` 仅作历史参考。
+## 历史参考
+
+以下文件不代表当前 v2 主线，只保留作历史对照：
+- `layout_guide.png`
+- `sample_full_frame.png`
+- `sample_iso_qr_v2_symbol.png`
+- `sample_iso_qr_v2_layout.png`
+- `sample_manifest_qrx_25_3f1a.tsv`
+- `sample_manifest_v1_legacy.tsv`

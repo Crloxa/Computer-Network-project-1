@@ -681,6 +681,47 @@ bool WriteDecodeReport(const std::filesystem::path& report_path,
     return true;
 }
 
+bool WriteMissingFrames(const std::filesystem::path& missing_path,
+                       const std::vector<uint16_t>& missing_frames,
+                       std::string* error_message) {
+    std::ofstream stream(missing_path);
+    if (!stream.is_open()) {
+        if (error_message != nullptr) {
+            *error_message = "Failed to write missing frame list: " + missing_path.string();
+        }
+        return false;
+    }
+
+    stream << "missing_count=" << missing_frames.size() << '\n';
+    for (uint16_t frame_seq : missing_frames) {
+        stream << frame_seq << '\n';
+    }
+    return true;
+}
+
+bool WriteDecodeSummary(const std::filesystem::path& summary_path,
+                        const std::string& status,
+                        std::size_t decoded_frames,
+                        uint16_t total_frames,
+                        std::size_t output_bytes,
+                        std::size_t missing_frames,
+                        std::string* error_message) {
+    std::ofstream stream(summary_path);
+    if (!stream.is_open()) {
+        if (error_message != nullptr) {
+            *error_message = "Failed to write decode summary: " + summary_path.string();
+        }
+        return false;
+    }
+
+    stream << "status=" << status << '\n'
+           << "decoded_frames=" << decoded_frames << '\n'
+           << "total_frames=" << total_frames << '\n'
+           << "output_bytes=" << output_bytes << '\n'
+           << "missing_frames=" << missing_frames << '\n';
+    return true;
+}
+
 }  // namespace
 
 std::vector<uint8_t> ReadFileBytes(const std::filesystem::path& input_path) {
@@ -893,6 +934,36 @@ bool DecodeIsoPackage(const std::filesystem::path& input_path,
         return false;
     }
 
+    std::vector<DecodedFrameReport> reports;
+    std::vector<uint16_t> missing_frames;
+
+    auto finalizeDecode = [&](const std::string& status,
+                              std::size_t decoded_frames,
+                              uint16_t total_frames,
+                              std::size_t output_bytes,
+                              const std::string& final_error) {
+        if (!WriteDecodeReport(output_dir / "decode_report.tsv", reports, error_message)) {
+            return false;
+        }
+        if (!WriteDecodeSummary(output_dir / "decode_summary.txt",
+                                status,
+                                decoded_frames,
+                                total_frames,
+                                output_bytes,
+                                missing_frames.size(),
+                                error_message)) {
+            return false;
+        }
+        if (!missing_frames.empty() &&
+            !WriteMissingFrames(output_dir / "missing_frames.txt", missing_frames, error_message)) {
+            return false;
+        }
+        if (!final_error.empty() && error_message != nullptr) {
+            *error_message = final_error;
+        }
+        return final_error.empty();
+    };
+
     std::vector<cv::Mat> frames;
     if (std::filesystem::is_directory(input_path)) {
         for (const std::filesystem::path& path : CollectImageFrames(input_path)) {
@@ -904,10 +975,7 @@ bool DecodeIsoPackage(const std::filesystem::path& input_path,
     } else {
         cv::VideoCapture capture(input_path.string());
         if (!capture.isOpened()) {
-            if (error_message != nullptr) {
-                *error_message = "Failed to open input video: " + input_path.string();
-            }
-            return false;
+            return finalizeDecode("read_error", 0U, 0U, 0U, "Failed to open input video: " + input_path.string());
         }
 
         cv::Mat frame;
@@ -919,13 +987,9 @@ bool DecodeIsoPackage(const std::filesystem::path& input_path,
     }
 
     if (frames.empty()) {
-        if (error_message != nullptr) {
-            *error_message = "No frames could be read from the decode input.";
-        }
-        return false;
+        return finalizeDecode("read_error", 0U, 0U, 0U, "No frames could be read from the decode input.");
     }
 
-    std::vector<DecodedFrameReport> reports;
     reports.reserve(frames.size());
 
     std::map<uint16_t, std::vector<uint8_t>> payloads_by_seq;
@@ -950,6 +1014,7 @@ bool DecodeIsoPackage(const std::filesystem::path& input_path,
         }
 
         if (!attempt.success) {
+            report.message = report.message.empty() ? "decode_failed" : "decode_failed: " + report.message;
             reports.push_back(std::move(report));
             continue;
         }
@@ -973,30 +1038,25 @@ bool DecodeIsoPackage(const std::filesystem::path& input_path,
             expected_total_frames = header.total_frames;
         } else if (expected_total_frames.value() != header.total_frames) {
             report.success = false;
-            report.message = "Inconsistent total_frames across decoded frames.";
+            report.message = "total_frames_conflict";
             reports.push_back(std::move(report));
             continue;
         }
 
         if (payloads_by_seq.find(header.frame_seq) == payloads_by_seq.end()) {
             payloads_by_seq.emplace(header.frame_seq, std::move(payload));
+        } else {
+            report.success = false;
+            report.message = "duplicate_frame";
         }
 
         reports.push_back(std::move(report));
     }
 
-    if (!WriteDecodeReport(output_dir / "decode_report.tsv", reports, error_message)) {
-        return false;
-    }
-
     if (!expected_total_frames.has_value()) {
-        if (error_message != nullptr) {
-            *error_message = "No valid ISO frames were decoded from the input.";
-        }
-        return false;
+        return finalizeDecode("no_valid_frames", 0U, 0U, 0U, "No valid ISO frames were decoded from the input.");
     }
 
-    std::vector<uint16_t> missing_frames;
     for (uint16_t frame_seq = 0; frame_seq < expected_total_frames.value(); ++frame_seq) {
         if (payloads_by_seq.find(frame_seq) == payloads_by_seq.end()) {
             missing_frames.push_back(frame_seq);
@@ -1004,16 +1064,11 @@ bool DecodeIsoPackage(const std::filesystem::path& input_path,
     }
 
     if (!missing_frames.empty()) {
-        std::ofstream(output_dir / "missing_frames.txt")
-            << "Missing frame count=" << missing_frames.size() << '\n';
-        std::ofstream missing_stream(output_dir / "missing_frames.txt", std::ios::app);
-        for (uint16_t frame_seq : missing_frames) {
-            missing_stream << frame_seq << '\n';
-        }
-        if (error_message != nullptr) {
-            *error_message = "Decoded ISO frames are incomplete; see missing_frames.txt.";
-        }
-        return false;
+        return finalizeDecode("missing_frames",
+                              payloads_by_seq.size(),
+                              expected_total_frames.value(),
+                              0U,
+                              "Decoded ISO frames are incomplete; see missing_frames.txt.");
     }
 
     std::vector<uint8_t> output_bytes;
@@ -1025,19 +1080,20 @@ bool DecodeIsoPackage(const std::filesystem::path& input_path,
     const std::filesystem::path output_file = output_dir / "output.bin";
     std::ofstream stream(output_file, std::ios::binary);
     if (!stream.is_open()) {
-        if (error_message != nullptr) {
-            *error_message = "Failed to write decoded output file: " + output_file.string();
-        }
-        return false;
+        return finalizeDecode("write_error",
+                              payloads_by_seq.size(),
+                              expected_total_frames.value(),
+                              0U,
+                              "Failed to write decoded output file: " + output_file.string());
     }
     stream.write(reinterpret_cast<const char*>(output_bytes.data()),
                  static_cast<std::streamsize>(output_bytes.size()));
-
-    std::ofstream(output_dir / "decode_summary.txt")
-        << "decoded_frames=" << payloads_by_seq.size() << '\n'
-        << "total_frames=" << expected_total_frames.value() << '\n'
-        << "output_bytes=" << output_bytes.size() << '\n';
-    return true;
+    stream.close();
+    return finalizeDecode("success",
+                          payloads_by_seq.size(),
+                          expected_total_frames.value(),
+                          output_bytes.size(),
+                          "");
 }
 
 }  // namespace demo_encoder
