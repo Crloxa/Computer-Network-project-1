@@ -8,6 +8,18 @@
 - 每条记录至少写明：日期、类型、范围、摘要、兼容性
 - 纯格式化、空白调整、错别字修正可不记录
 
+## 2026-03-10
+
+- Type: `Added`
+  - Scope: `docs`
+  - Summary: 新增 `docs/protocols/protocol_rgb_4color_option.md`，记录“基础 ISO QR + 四色副载层”的可优化方案，并明确其为非默认主线
+  - Compatibility: `non-breaking`
+
+- Type: `Changed`
+  - Scope: `docs`
+  - Summary: 更新 `docs/README.md` 与根 `README.md` 的阅读入口，新增四色可优化文档索引并标注“可优化选项”
+  - Compatibility: `non-breaking`
+
 ## 2026-03-09
 
 - Type: `Changed`

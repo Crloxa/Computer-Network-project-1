@@ -4,6 +4,7 @@
 
 ## 阅读入口
 - 当前有效的工程设计、协议与编解码主线：看 `docs/protocols/protocol_iso_qr_v2_course.md`
+- 可优化选项（非默认主线）：看 `docs/protocols/protocol_rgb_4color_option.md`
 - 历史自定义方案参考：看 `docs/protocols/protocol_v1.md`
 - 最近发生的有效改动：看 `docs/CHANGELOG.md`
 - 样例和运行产物说明：看 `bin/samples/README.txt`
@@ -12,11 +13,13 @@
 - `docs/README.md`：文档入口与阅读顺序
 - `docs/CHANGELOG.md`：集中式改动记录，最新在前
 - `docs/protocols/protocol_iso_qr_v2_course.md`：当前有效的 ISO QR 主线设计与实现说明
+- `docs/protocols/protocol_rgb_4color_option.md`：四色增强承载方案（可优化选项，非默认主线）
 - `docs/protocols/protocol_v1.md`：旧的 `V1.6-108-4F` 自定义方案，仅作历史参考
 
 ## 协作约定
 - 修改协议、代码行为、构建方式、样例资产或文档结构时，必须同步更新 `docs/CHANGELOG.md`
 - 协议正文只保留当前有效规则；被替代方案移入历史参考，不再继续扩写
+- 可优化方案必须明确标注“非默认主线”，并与当前有效协议文档分开维护
 - 若样例图片不是由当前代码生成，必须明确标注为历史样例，不能冒充当前主线基准
 
 ## 推荐阅读顺序
