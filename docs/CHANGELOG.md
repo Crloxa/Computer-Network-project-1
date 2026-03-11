@@ -17,12 +17,12 @@
 
 - Type: `Added`
   - Scope: `samples`
-  - Summary: 在 `bin/samples/` 新增 `v2_success`、`v2_missing_frame`、`v2_crc_error` 三套当前主线联调基准，以及 `v2_fixture_index.tsv` 与再生成脚本 `scripts/gen_v2_fixtures.py`
+  - Summary: 在 `bin/samples/` 新增 `v2_success`、`v2_missing_frame`、`v2_crc_error` 三套当前 ISO 主线联调基准，以及 `v2_fixture_index.tsv` 与再生成脚本 `scripts/gen_v2_fixtures.py`
   - Compatibility: `non-breaking`
 
 - Type: `Changed`
   - Scope: `samples`
-  - Summary: 将旧阶段的 `bin/samples/sample_manifest.tsv` 改名为 `sample_manifest_v1_legacy.tsv`，避免与当前 v2 样例产物的 `sample_manifest.tsv` 命名冲突
+  - Summary: 将旧阶段的 `bin/samples/sample_manifest.tsv` 改名为 `sample_manifest_v1_legacy.tsv`，避免与当前 ISO 主线样例产物的 `sample_manifest.tsv` 命名冲突
   - Compatibility: `non-breaking`
 
 ## 2026-03-10
@@ -93,7 +93,7 @@
 
 - Type: `Added`
   - Scope: `docs`
-  - Summary: 新增 `docs/protocols/protocol_iso_qr_v2_course.md`，给出符合课程要求的 ISO QR Version 2 方案（quiet zone、3 finder、1 alignment、信息头与 CRC32）
+  - Summary: 新增 `docs/protocols/protocol_iso_qr_v2_course.md`，给出符合课程要求的标准 ISO QR 主线课程方案文档（quiet zone、3 finder、1 alignment、信息头与 CRC32）
   - Compatibility: `non-breaking`
 
 - Type: `Added`

@@ -10,6 +10,7 @@
 - 失败模式、排障路径与已知限制
 
 本文档描述的对象是当前仓库中的 ISO QR 主线实现，不包含旧 `V1.6-108-4F` 自定义协议的扩展设计。旧协议仅保留在 `protocol_v1.md` 作为历史参考。
+文件名中的 `v2` 是历史命名沿用，不表示当前默认二维码符号版本是 QR Version 2；当前默认工作点是 `iso133 / Version 29 / 133x133 + ECC Q`。
 
 ## 2. 目标与边界
 
@@ -428,7 +429,7 @@ module_pixels = qr_size / qr_frame.cols
 
 ### 10.4 固定联调样例
 
-仓库内固定保留 3 套当前 v2 基准：
+仓库内固定保留 3 套当前 ISO 主线基准：
 - `bin/samples/v2_success/`
 - `bin/samples/v2_missing_frame/`
 - `bin/samples/v2_crc_error/`

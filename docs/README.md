@@ -8,6 +8,7 @@
 - 历史自定义方案参考：看 `docs/protocols/protocol_v1.md`
 - 最近发生的有效改动：看 `docs/CHANGELOG.md`
 - 样例和运行产物说明：看 `bin/samples/README.txt`
+- 说明：`docs/protocols/protocol_iso_qr_v2_course.md` 文件名中的 `v2` 是历史命名沿用，不表示当前默认二维码符号版本是 QR Version 2。
 
 ## 当前结构
 - `docs/README.md`：文档入口与阅读顺序
@@ -15,6 +16,7 @@
 - `docs/protocols/protocol_iso_qr_v2_course.md`：当前有效的 ISO QR 主线设计与实现说明
 - `docs/protocols/protocol_rgb_4color_option.md`：四色增强承载方案（可优化选项，非默认主线）
 - `docs/protocols/protocol_v1.md`：旧的 `V1.6-108-4F` 自定义方案，仅作历史参考
+- 当前默认工作点为 `iso133 / Version 29 / 133x133 + ECC Q`。
 
 ## 协作约定
 - 修改协议、代码行为、构建方式、样例资产或文档结构时，必须同步更新 `docs/CHANGELOG.md`

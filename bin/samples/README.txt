@@ -1,6 +1,7 @@
-`bin/samples/` 现在同时承载两类内容：当前 v2 固定联调基准，以及旧阶段保留的历史参考文件。
+`bin/samples/` 现在同时承载两类内容：当前 ISO 主线固定联调基准，以及旧阶段保留的历史参考文件。
+目录名中的 `v2` 仅是样例集标签沿用，不表示当前默认二维码符号版本是 QR Version 2。
 
-## 当前可直接联调的 v2 基准
+## 当前可直接联调的 ISO 主线基准
 
 固定入口：
 - `v2_fixture_index.tsv`
@@ -39,7 +40,7 @@
 
 ## 历史参考
 
-以下文件不代表当前 v2 主线，只保留作历史对照：
+以下文件不代表当前 ISO 主线，只保留作历史对照：
 - `layout_guide.png`
 - `sample_full_frame.png`
 - `sample_iso_qr_v2_symbol.png`
