@@ -182,7 +182,10 @@ CarrierLayout BuildCarrierLayout(const protocol_iso::EncoderOptions& options) {
     layout.canvas_pixels = options.canvas_pixels;
     layout.marker_margin = std::max(24, options.canvas_pixels / 28);
     layout.marker_size = std::max(72, options.canvas_pixels / 9);
-    layout.qr_size = std::max(720, static_cast<int>(options.canvas_pixels * 0.78));
+    // carrier 四角 marker 只负责定位，不能再覆盖 QR 本体；否则 finder/data 会被外层标记改写。
+    const int max_qr_size_without_overlap =
+        layout.canvas_pixels - 2 * (layout.marker_margin + layout.marker_size);
+    layout.qr_size = std::max(720, max_qr_size_without_overlap);
     layout.qr_x = (options.canvas_pixels - layout.qr_size) / 2;
     layout.qr_y = layout.qr_x;
     return layout;

@@ -21,6 +21,11 @@
   - Compatibility: `breaking`
 
 - Type: `Changed`
+  - Scope: `layout`
+  - Summary: 调整 carrier 布局，要求四角 marker 与 QR 本体完全分离，避免 marker 覆盖 quiet zone、finder 或数据区，并恢复 `encode -> decode` 的自举闭环
+  - Compatibility: `breaking`
+
+- Type: `Changed`
   - Scope: `build`
   - Summary: 更新 Visual Studio 工程编译项，移除主执行链路对 OpenCV 头库的直接依赖，改为编译自研图像与 QR 模块
   - Compatibility: `breaking`

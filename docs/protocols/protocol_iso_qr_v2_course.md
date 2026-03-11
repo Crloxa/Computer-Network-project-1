@@ -231,12 +231,13 @@ carrier 是在标准 QR 外层额外构造的白底画布。布局参数由 `can
 
 - `marker_margin = max(24, canvas / 28)`
 - `marker_size = max(72, canvas / 9)`
-- `qr_size = max(720, canvas * 0.78)`
+- `qr_size = max(720, canvas - 2 * (marker_margin + marker_size))`
 - `qr_x = qr_y = (canvas - qr_size) / 2`
 
 四角规则：
 - 左上、右上、左下使用相同 marker
 - 右下使用反相中心 marker，用于方向区分
+- 当前实现要求四角 marker 与 QR 本体完全分离，不能再覆盖 quiet zone、finder 或数据区。
 
 ### 8.4 渲染尺度约束
 
@@ -421,7 +422,7 @@ module_pixels = qr_size / qr_frame.cols
 
 ### 10.4 固定联调样例
 
-仓库内固定保留 3 套当前 ISO 主线基准：
+仓库内保留 3 套 v2 样例目录：
 - `bin/samples/v2_success/`
 - `bin/samples/v2_missing_frame/`
 - `bin/samples/v2_crc_error/`
@@ -435,6 +436,10 @@ module_pixels = qr_size / qr_frame.cols
 - `v2_success`：验证 `output.bin == input.bin`
 - `v2_missing_frame`：验证缺帧失败路径和 `missing_frames.txt`
 - `v2_crc_error`：验证 `crc_mismatch` 报告与 CRC 错帧跳过行为
+
+说明：
+- 2026-03-11 起 carrier 布局已调整为“marker 不覆盖 QR 本体”的新口径。
+- 若仓库中的旧样例仍来自更早布局，应视为历史样例；当前主线基准应以重新生成的样例为准。
 
 ## 11. 推荐参数与调优建议
 
