@@ -8,6 +8,28 @@
 - 每条记录至少写明：日期、类型、范围、摘要、兼容性
 - 纯格式化、空白调整、错别字修正可不记录
 
+## 2026-03-12
+
+- Type: `Changed`
+  - Scope: `protocol`
+  - Summary: 将当前默认主线从 `ISO QR v2` 切回 `V1.6-108-4F`，保留 `108x108 / 4 finder / timing / alignment / 1080x1080` 几何布局，但将 header 改为最简控制头：`frame_type + tail_len_bytes + checkcode16 + frame_seq`
+  - Compatibility: `breaking`
+
+- Type: `Changed`
+  - Scope: `code`
+  - Summary: 重写 `main.cpp` 与 `encoder.*` 的默认执行链，恢复 `samples / demo / encode / decode` 的 `v1.6` 口径，并移除默认 CLI 对 `profile/ecc/canvas/markers` 等 `v2` 参数的暴露
+  - Compatibility: `breaking`
+
+- Type: `Changed`
+  - Scope: `decode`
+  - Summary: 新增 `V1.6` 自生成回环解码链路，首版仅保证仓库自生成帧目录和自生成 `demo.mp4` 的恢复，不覆盖拍屏、透视畸变和历史外部样例
+  - Compatibility: `breaking`
+
+- Type: `Changed`
+  - Scope: `docs`
+  - Summary: 更新根 `README.md`、`docs/README.md`、`docs/protocols/protocol_v1.md` 和 `bin/samples/README.txt`，明确 `V1.6-108-4F` 为当前默认主线，`v2` 代码与文档仅作历史参考保留
+  - Compatibility: `non-breaking`
+
 ## 2026-03-11
 
 - Type: `Changed`

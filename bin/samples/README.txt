@@ -1,49 +1,37 @@
-`bin/samples/` 现在同时承载两类内容：当前 ISO 主线固定联调基准，以及旧阶段保留的历史参考文件。
-目录名中的 `v2` 仅是样例集标签沿用，不表示当前默认二维码符号版本是 QR Version 2。
+`bin/samples/` 现在以 `V1.6-108-4F` 为默认样例口径，仓库内仍保留少量历史 `v2` 文件用于回看，但不再作为当前主线基准。
 
-## 当前可直接联调的 ISO 主线基准
+## 当前主线样例
 
-固定入口：
-- `v2_fixture_index.tsv`
+通过 `Project1 samples out/samples` 动态生成的当前主线样例包括：
 
-固定基准目录：
-- `v2_success/`
-- `v2_missing_frame/`
-- `v2_crc_error/`
-
-每套目录固定包含：
-- `input.bin`
-- `frames/`
-- `frame_manifest.tsv`
-- `decode_args.txt`
-- `expected_status.txt`
-
-其中：
-- `v2_success/`：完整成功样例，`output.bin` 必须与 `input.bin` 字节完全一致
-- `v2_missing_frame/`：缺一帧样例，必须输出 `missing_frames.txt`
-- `v2_crc_error/`：单帧 CRC 错误样例，必须在 `decode_report.tsv` 中出现 `crc_mismatch`
-
-基准的默认参数固定为：
-- `--profile iso133 --ecc Q --canvas 1440`
-
-重新生成这三套基准：
-- 在具备 `qrcode` 和 `Pillow` 的 Python 环境中运行：`python3 scripts/gen_v2_fixtures.py`
-
-## 运行时样例产物
-
-以下仍然是运行 `Project1 samples out/samples` 时动态生成的产物，不作为仓库内固定回归基准：
-- `sample_<profile>_symbol.png`
-- `sample_<profile>_carrier.png`
-- `sample_<profile>_layout.png`
+- `layout_guide.*`
+- `sample_full_frame.*`
+- `sample_short_frame.*`
 - `sample_manifest.tsv`
-- `sample_capacity.tsv`
+
+这些样例用于：
+
+- 确认 `108x108 / 4 finder / timing / alignment` 版式是否正确
+- 校对 `16x10` header 保留区位置
+- 作为自生成 `decode` 联调时的版式参考
+
+## 当前回环基准
+
+当前 `decode` 的默认回环输入不是仓库内静态 PNG，而是由当前编码器生成的运行产物：
+
+- `out/<case>/encode/frames/physical/`
+- `out/<case>/encode/demo.mp4`
+
+当前首版只保证这两类输入可回环，不保证拍屏、透视畸变或历史外部样例。
 
 ## 历史参考
 
-以下文件不代表当前 ISO 主线，只保留作历史对照：
-- `layout_guide.png`
-- `sample_full_frame.png`
-- `sample_iso_qr_v2_symbol.png`
-- `sample_iso_qr_v2_layout.png`
-- `sample_manifest_qrx_25_3f1a.tsv`
-- `sample_manifest_v1_legacy.tsv`
+以下内容仍可能出现在仓库中，但都不代表当前默认主线：
+
+- `v2_success/`
+- `v2_missing_frame/`
+- `v2_crc_error/`
+- `v2_fixture_index.tsv`
+- 旧阶段的 ISO / QR / layout 对照图
+
+这些文件只保留作历史参考，不应再被当作 `V1.6-108-4F` 的默认验收基准。
