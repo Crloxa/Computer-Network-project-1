@@ -4,6 +4,7 @@
 
 ## 阅读入口
 - 当前有效的工程设计、协议与编解码主线：看 `docs/protocols/protocol_iso_qr_v2_course.md`
+  - 说明：当前代码已经切到“自研 QR 本体 + 现有 isoqrv2 外部契约”实现，首版只支持 `iso133 / Q / markers=on`
 - 编码端-解码端联调约定（当前执行口径）：看 `docs/protocols/protocol_iso_v2_integration_contract.md`
 - 可优化选项（非默认主线）：看 `docs/protocols/protocol_rgb_4color_option.md`
 - 历史自定义方案参考：看 `docs/protocols/protocol_v1.md`
@@ -14,11 +15,11 @@
 ## 当前结构
 - `docs/README.md`：文档入口与阅读顺序
 - `docs/CHANGELOG.md`：集中式改动记录，最新在前
-- `docs/protocols/protocol_iso_qr_v2_course.md`：当前有效的 ISO QR 主线设计与实现说明
+- `docs/protocols/protocol_iso_qr_v2_course.md`：当前有效的 ISO QR v2 主线设计与实现说明（现代码为自研实现）
 - `docs/protocols/protocol_iso_v2_integration_contract.md`：v2 主线联调约定与执行清单
 - `docs/protocols/protocol_rgb_4color_option.md`：四色增强承载方案（可优化选项，非默认主线）
 - `docs/protocols/protocol_v1.md`：旧的 `V1.6-108-4F` 自定义方案，仅作历史参考
-- 当前默认工作点为 `iso133 / Version 29 / 133x133 + ECC Q`。
+- 当前默认工作点为 `iso133 / Version 29 / 133x133 + ECC Q`，并且当前代码仅支持这一组工作点。
 
 ## 协作约定
 - 修改协议、代码行为、构建方式、样例资产或文档结构时，必须同步更新 `docs/CHANGELOG.md`

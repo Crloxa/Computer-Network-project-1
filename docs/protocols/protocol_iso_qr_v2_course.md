@@ -11,19 +11,20 @@
 
 本文档描述的对象是当前仓库中的 ISO QR 主线实现，不包含旧 `V1.6-108-4F` 自定义协议的扩展设计。旧协议仅保留在 `protocol_v1.md` 作为历史参考。
 文件名中的 `v2` 是历史命名沿用，不表示当前默认二维码符号版本是 QR Version 2；当前默认工作点是 `iso133 / Version 29 / 133x133 + ECC Q`。
+自 2026-03-11 起，仓库代码已经切到“自研 QR 本体 + 现有 isoqrv2 外部契约”的实现路线：不再调用 OpenCV 或现成 QR 编解码库，当前首版仅支持 `iso133 + Q + markers=on`。
 
 ## 2. 目标与边界
 
 ### 2.1 目标
 
-- 使用真实标准 `ISO/IEC 18004 QR Code Model 2` 承载单帧数据。
+- 使用 `Version 29 / 133x133 + ECC Q` 这套标准 QR 版式承载单帧数据，但二维码本体由仓库内 C++ 自行编码与解码。
 - 保持 QR 本体标准不变，只在外围增加 carrier 与定位标记，以适配视频录制、拍屏和透视矫正。
 - 提供统一的命令行入口，覆盖样例生成、编码打包、视频解码和文件重组。
 - 让接手该仓库的开发者可以只靠本文档理解参数、流程、产物和调试方法。
 
 ### 2.2 非目标
 
-- 不修改标准 QR 的 finder、alignment、timing、mask、format、quiet zone 和内部 RS 纠错结构。
+- 不在当前主线中扩展到 `iso109/iso145/iso177` 或 `M/H`；这些参数仍保留在 CLI 兼容层，但首版代码只接受 `iso133/Q`。
 - 不在当前主线中实现彩色 payload 或非标准二维码版式。
 - 不在当前主线中实现跨帧 FEC / fountain code / 额外 RS 冗余。
 - 不把旧阶段样例 PNG 当作当前主线协议基准。
@@ -91,7 +92,9 @@
 
 ### 6.1 Profile
 
-当前支持的 profile：
+协议文档保留完整 profile 概念，但当前代码只支持：
+
+- `iso133`
 
 | 名称 | Version | logical grid | 角色 |
 | --- | --- | --- | --- |
@@ -105,10 +108,9 @@
 
 ### 6.2 ECC
 
-当前支持：
-- `M`
+协议文档保留完整 ECC 概念，但当前代码只支持：
+
 - `Q`
-- `H`
 
 默认值：
 - `Q`
@@ -205,21 +207,18 @@ Project1 decode <input_video_or_frame_dir> <output_dir> [--profile iso109|iso133
 
 ### 8.1 容量探测
 
-单帧净荷不是写死值，而是运行时探测：
-- 用当前 `profile + ecc` 构造测试字节流
-- 通过二分搜索找到 `QRCodeEncoder` 仍可接受的最大 frame bytes
-- 可用 payload 上限 = `max_frame_bytes - 12`
-
-这样做的原因：
-- 避免手工硬编码每帧容量
-- 让同一套代码自然适配 `M/Q/H` 和不同 version
+当前首版容量是固定值：
+- `max_frame_bytes = 908`
+- `max_payload_bytes = 896`
+- 该值对应当前自研实现固定支持的 `Version 29 / ECC Q / Byte mode`
 
 ### 8.2 标准 QR 生成
 
-QR 本体使用 OpenCV `QRCodeEncoder`：
-- `version = profile.version`
-- `correction_level = M/Q/H`
-- `mode = Byte mode`
+QR 本体由仓库内自研 C++ 实现：
+- 固定 `version = 29`
+- 固定 `correction_level = Q`
+- 固定 `mode = Byte mode`
+- 内部自行完成 data codewords、RS block、mask 选择、format/version info 写入与解码
 
 本体规则：
 - 保持标准 quiet zone
@@ -255,10 +254,10 @@ module_pixels = qr_size / qr_frame.cols
 ### 8.5 视频输出
 
 视频封装流程：
-1. 用 OpenCV `VideoWriter` 先写 `demo_temp.mp4`
+1. 先把每个逻辑帧写成内部 BMP 序列
 2. 每个逻辑帧按 `repeat` 次数重复写入
-3. 若检测到可用 `ffmpeg`，再转码为 `yuv420p` 输出 `demo.mp4`
-4. 若 `ffmpeg` 不可用，则保留 OpenCV 输出的 MP4，并记录 `video_status.txt`
+3. 使用 `ffmpeg` 把 BMP 序列封装为 `yuv420p` 的 `demo.mp4`
+4. 若 `ffmpeg` 不可用，则视频链路直接报错，但帧图链路仍可独立联调
 
 ## 9. 解码设计
 
@@ -268,34 +267,24 @@ module_pixels = qr_size / qr_frame.cols
 - 帧目录
 - 视频文件
 
-视频路径下会先用 `VideoCapture` 逐帧读取。
+视频路径下会先用 `ffmpeg` 抽帧到临时 BMP 目录，再进入自研解码流程。
 
 ### 9.2 两段式检测
 
-当前检测链分两步：
+当前检测链是固定裁切链路：
 
-1. 直接对整帧做标准 QR 解码
-2. 直接失败时，再使用 carrier 标记做拉正后解码
-
-具体实现：
-- 直接解码：`QRCodeDetector`
-- fallback：`QRCodeDetectorAruco`
+1. 先把输入帧转成 BMP
+2. 再按当前 carrier 固定布局裁出中心 QR 区
+3. 对 QR 区做阈值化与模块采样
+4. 交给仓库内自研 `Version 29 / Q` 解码器读取
 
 ### 9.3 Carrier 拉正
 
-拉正步骤：
-- 灰度化
-- Otsu 二值化并反色
-- 找轮廓
-- 依据面积、宽高比和四象限位置选出四个 marker
-- 求透视变换矩阵
-- 拉正整张 carrier
-- 从中心裁出 QR 区再做二次解码
-
-当前启发式条件：
-- 轮廓面积至少为整帧面积的 `0.0015`
-- 候选矩形宽高都要大于 `20`
-- 宽高比不能大于 `1.35`
+首版不做复杂透视拉正。当前做法是：
+- 若输入已经接近 QR 模块图，则直接按模块网格采样
+- 否则先把整帧缩放到 `canvas`
+- 再按固定 `carrier` 布局裁出中心 QR 区
+- 对 QR 区做 Otsu 阈值化和模块投票采样
 
 ### 9.4 Header 解析与重组
 
@@ -488,25 +477,25 @@ module_pixels = qr_size / qr_frame.cols
 ### 12.1 编码阶段
 
 常见失败：
-- `QRCodeEncoder` 返回空图
+- 当前参数组合不是 `iso133 + Q`
 - 当前参数下连 header 都塞不进去
 - 渲染尺度低于 `4 px/module`
 
 排障顺序：
-1. 确认 profile 和 ECC 没选得过激进
+1. 确认当前参数就是 `--profile iso133 --ecc Q --markers on`
 2. 提高 `--canvas`
-3. 降低 profile 或降低 ECC 等级
+3. 检查输入文件大小是否导致分帧数异常增大
 
 ### 12.2 视频阶段
 
 常见失败：
-- `VideoWriter` 打不开输出文件
-- `ffmpeg` 不存在，无法转 `yuv420p`
+- `ffmpeg` 不存在，无法完成 PNG/BMP 转换或视频封装
+- 输出目录不可写
 
 排障顺序：
 1. 先看 `video_status.txt`
 2. 确认 `ffmpeg/bin/ffmpeg(.exe)` 是否存在
-3. 若只需联调，可先接受 OpenCV 原始 MP4
+3. 若只需联调，可直接用 `frames/carrier/` 目录跑 `decode`
 
 ### 12.3 解码阶段
 
@@ -529,7 +518,8 @@ module_pixels = qr_size / qr_frame.cols
 - 当前鲁棒性仍高度依赖实际拍摄条件，尚未形成大规模实测统计。
 - 当前没有跨帧冗余，缺帧会直接导致整体解码失败。
 - 当前 decode 依赖调用时提供正确的 `profile/ecc/canvas` 语境，不做自动档位猜测。
-- macOS 上若要原样跑当前 C++ 主线，OpenCV 依赖成本较高；Windows + Visual Studio 的路径更直接。
+- 当前代码只支持 `iso133 / Q / markers=on`，其余 ISO 参数仍保留在 CLI 兼容层，但不会真正执行。
+- 当前主线不依赖 OpenCV；视频桥接和图片格式转换依赖 `ffmpeg` 可执行程序。
 
 ## 14. 后续工作
 

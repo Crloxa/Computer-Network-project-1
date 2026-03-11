@@ -10,6 +10,26 @@
 
 ## 2026-03-11
 
+- Type: `Changed`
+  - Scope: `code`
+  - Summary: 将 ISO QR v2 主链从 OpenCV / 现成 QR 编解码切换为仓库内自研 `Version 29 / 133x133 + ECC Q` 实现，并新增 `simple_image.*` 与 `qr_iso_v29.*` 支撑样例、编码、视频桥接和解码流程
+  - Compatibility: `breaking`
+
+- Type: `Changed`
+  - Scope: `protocol`
+  - Summary: 统一 `Version 29 / ECC Q` 的真实容量口径为 `max_frame_bytes=908`、`max_payload_bytes=896`，并移除仓库中残留的旧 `698/686` 口径
+  - Compatibility: `breaking`
+
+- Type: `Changed`
+  - Scope: `build`
+  - Summary: 更新 Visual Studio 工程编译项，移除主执行链路对 OpenCV 头库的直接依赖，改为编译自研图像与 QR 模块
+  - Compatibility: `breaking`
+
+- Type: `Changed`
+  - Scope: `docs`
+  - Summary: 更新根 `README.md`、`docs/README.md` 与 `docs/protocols/protocol_iso_qr_v2_course.md`，明确当前实现是“自研 QR 本体 + 现有 isoqrv2 外部契约”，首版仅支持 `iso133 / Q / markers=on`
+  - Compatibility: `non-breaking`
+
 - Type: `Added`
   - Scope: `docs`
   - Summary: 新增 `docs/protocols/protocol_iso_v2_integration_contract.md`，结合 v2 主线固化联调输入契约、输出口径、失败语义与 10 项联调清单推荐内容

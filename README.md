@@ -2,19 +2,20 @@
 
 ## 当前主线
 
-当前仓库推荐使用的实现是标准 ISO QR 视频传输主线。
+当前仓库推荐使用的实现是自研 `ISO QR v2` 视频传输主线：二维码本体保持 `Version 29 / 133x133 + ECC Q` 版式，但编码解码不再依赖 OpenCV 或现成 QR 库。
 
 - 主线文档：`docs/protocols/protocol_iso_qr_v2_course.md`
 - 联调约定：`docs/protocols/protocol_iso_v2_integration_contract.md`
 - 可优化选项：`docs/protocols/protocol_rgb_4color_option.md`（非默认主线）
 - 默认工作点：`Version 29 / 133x133 + ECC Q`
+- 当前代码限制：`encode/decode` 首版仅支持 `--profile iso133 --ecc Q --markers on`
 - 推荐命令：`Project1 encode input.bin out/encode/input --profile iso133 --ecc Q --canvas 1440`
 - 说明：`protocol_iso_qr_v2_course.md` 中的 `v2` 是历史命名沿用，不表示当前默认二维码符号版本是 QR Version 2。
 
 ## 重要提醒
 
-- 当前主线已经切到真实标准 `ISO/IEC 18004 QR Code Model 2`。
-- 当前默认实现是标准 ISO QR 主线，默认工作点为 `iso133 / Version 29 / 133x133 + ECC Q`，不是 “QR Version 2 默认实现”。
+- 当前主线已经切到自研的 `ISO QR v2` 实现，二维码本体仍遵循 `Version 29 / 133x133 + ECC Q` 这套版式。
+- 当前默认实现不再调用 OpenCV 或现成 QR 编解码库；图像桥接与视频封装/拆帧依赖 `ffmpeg` 可执行程序。
 - 后续开发、联调、验收、截图和汇报，默认都应基于这条 ISO 主线进行。
 - 旧的 `V1.6-108-4F` 自定义方案仅保留作历史参考，不推荐继续作为日常运行版本。
 - 四色增强承载方案属于可优化选项，当前默认交付与验收仍以黑白 ISO 主线为准。

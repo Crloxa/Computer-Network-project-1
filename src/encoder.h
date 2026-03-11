@@ -6,17 +6,7 @@
 #include <string>
 #include <vector>
 
-#include <opencv2/opencv.hpp>
-
 namespace demo_encoder {
-
-struct EncodedFrame {
-    protocol_iso::FrameHeader header;
-    std::vector<uint8_t> payload;
-    std::vector<uint8_t> frame_bytes;
-    cv::Mat qr_frame;
-    cv::Mat carrier_frame;
-};
 
 struct DecodedFrameReport {
     int source_index = -1;
