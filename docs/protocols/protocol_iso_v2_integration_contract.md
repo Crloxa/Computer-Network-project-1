@@ -14,12 +14,12 @@
 
 ### 2.1 参数语境
 
-- `profile`: `iso109 | iso133 | iso145 | iso177`
-- `ecc`: `M | Q | H`
+- `profile`: 当前首版固定为 `iso133`
+- `ecc`: 当前首版固定为 `Q`
 - `canvas`: `>= 720`
 - 当前默认工作点：`iso133 + Q + 1440`
 
-联调要求：编码与解码必须使用相同 `profile/ecc/canvas`，当前阶段不做自动猜档。
+联调要求：编码与解码必须使用相同 `profile/ecc/canvas`，当前阶段不做自动猜档，也不支持切换到其他 ISO 档位。
 
 ### 2.2 单帧字节格式
 
@@ -35,10 +35,11 @@
 
 ### 2.3 黑白主线解码流程
 
-1. 直接整帧 QR 解码（`QRCodeDetector`，fallback `QRCodeDetectorAruco`）。
-2. 直接失败时，基于四角 marker 透视拉正并裁剪中心 QR 后再次解码。
-3. 成功后执行 header 解析与 CRC 校验。
-4. 按 `frame_seq` 去重收集并重组。
+1. 若输入是视频，先用 `ffmpeg` 抽帧；若输入是 PNG/JPG，先转成内部 BMP。
+2. 基于四角 marker 做归一化，裁剪中心 QR 区并回采模块网格。
+3. 调用仓库内自研 `Version 29 / ECC Q` 解码器读取 QR 字节流。
+4. 成功后执行 header 解析与 CRC 校验。
+5. 按 `frame_seq` 去重收集并重组。
 
 ### 2.4 当前实现阈值
 
@@ -46,6 +47,7 @@
 - 候选 marker 最小宽高：`> 20 px`
 - 候选 marker 最大宽高比：`<= 1.35`
 - 渲染最小模块尺度：`module_pixels >= 4.0`
+- 当前首版只支持：`iso133 + Q + markers=on`
 
 ### 2.5 解码标准输出
 
@@ -80,7 +82,7 @@
 推荐约定：
 - decode 调用必须显式传 `--profile --ecc --canvas`。
 - 默认先跑：`iso133 + Q + 1440`。
-- 对照再跑：`iso133 + Q/H + 2160`。
+- 对照可跑：`iso133 + Q + 2160`。
 
 ### 4.2 固定单帧格式
 

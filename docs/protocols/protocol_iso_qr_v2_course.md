@@ -33,7 +33,7 @@
 
 ### 3.1 为什么主线切到标准 ISO QR
 
-- 与 `examples` 中的自定义版式相比，标准 ISO QR 更容易复用 OpenCV 编码与检测能力。
+- 与 `examples` 中的自定义版式相比，标准 ISO QR 的功能区、格式信息和数据扫描顺序更稳定，适合作为当前自研实现的规则基线。
 - 后续对鲁棒性的优化可以集中在外围 carrier、拍摄条件和参数选择，不必重复实现二维码本体规则。
 - 课程展示可以保留“大尺寸、可拍摄、可透视拉正”的视觉效果，同时避免偏离标准。
 
@@ -402,7 +402,7 @@ module_pixels = qr_size / qr_frame.cols
 | `success` | 当前帧是否成功进入有效重组 |
 | `profile` | 当前解码 profile |
 | `ecc` | 当前解码 ECC |
-| `method` | `direct`、`aruco`、`warped-direct` 等 |
+| `method` | 当前实际走到的自研解码路径，例如 `carrier-bbox` |
 | `frame_seq` | 解析出的帧序号 |
 | `total_frames` | 解析出的总帧数 |
 | `payload_len` | 解析出的净荷长度 |
@@ -520,6 +520,7 @@ module_pixels = qr_size / qr_frame.cols
 - 当前 decode 依赖调用时提供正确的 `profile/ecc/canvas` 语境，不做自动档位猜测。
 - 当前代码只支持 `iso133 / Q / markers=on`，其余 ISO 参数仍保留在 CLI 兼容层，但不会真正执行。
 - 当前主线不依赖 OpenCV；视频桥接和图片格式转换依赖 `ffmpeg` 可执行程序。
+- 仓库中的 `include/`、`lib/`、`bin/` 仍保留历史第三方资产，便于回溯旧版本；这些目录当前不属于主执行链路。
 
 ## 14. 后续工作
 

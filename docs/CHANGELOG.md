@@ -30,6 +30,11 @@
   - Summary: 更新根 `README.md`、`docs/README.md` 与 `docs/protocols/protocol_iso_qr_v2_course.md`，明确当前实现是“自研 QR 本体 + 现有 isoqrv2 外部契约”，首版仅支持 `iso133 / Q / markers=on`
   - Compatibility: `non-breaking`
 
+- Type: `Changed`
+  - Scope: `docs`
+  - Summary: 清理联调文档中残留的 `QRCodeDetector/OpenCV` 旧表述，并补充“历史第三方资产仍保留在仓库中但不属于当前主执行链路”的说明
+  - Compatibility: `non-breaking`
+
 - Type: `Added`
   - Scope: `docs`
   - Summary: 新增 `docs/protocols/protocol_iso_v2_integration_contract.md`，结合 v2 主线固化联调输入契约、输出口径、失败语义与 10 项联调清单推荐内容

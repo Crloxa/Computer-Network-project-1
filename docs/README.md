@@ -5,6 +5,7 @@
 ## 阅读入口
 - 当前有效的工程设计、协议与编解码主线：看 `docs/protocols/protocol_iso_qr_v2_course.md`
   - 说明：当前代码已经切到“自研 QR 本体 + 现有 isoqrv2 外部契约”实现，首版只支持 `iso133 / Q / markers=on`
+  - 说明：仓库仍保留 `include/`、`lib/`、`bin/` 下的历史第三方资产用于回溯旧版本，但当前主链不再直接依赖它们
 - 编码端-解码端联调约定（当前执行口径）：看 `docs/protocols/protocol_iso_v2_integration_contract.md`
 - 可优化选项（非默认主线）：看 `docs/protocols/protocol_rgb_4color_option.md`
 - 历史自定义方案参考：看 `docs/protocols/protocol_v1.md`
