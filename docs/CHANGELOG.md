@@ -10,6 +10,16 @@
 
 ## 2026-03-11
 
+- Type: `Added`
+  - Scope: `docs`
+  - Summary: 新增 `docs/protocols/protocol_iso_v2_integration_contract.md`，结合 v2 主线固化联调输入契约、输出口径、失败语义与 10 项联调清单推荐内容
+  - Compatibility: `non-breaking`
+
+- Type: `Changed`
+  - Scope: `docs`
+  - Summary: 更新 `docs/README.md` 与根 `README.md` 的阅读入口，新增 v2 联调约定文档索引
+  - Compatibility: `non-breaking`
+
 - Type: `Changed`
   - Scope: `performance`
   - Summary: `DecodeIsoPackage` 改为流式处理视频/帧目录，复用 QR detector，并新增 `--protocol-samples on|off` 与 `--decode-debug on|off` 开关以支持快速路径

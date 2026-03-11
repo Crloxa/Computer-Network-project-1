@@ -4,6 +4,7 @@
 
 ## 阅读入口
 - 当前有效的工程设计、协议与编解码主线：看 `docs/protocols/protocol_iso_qr_v2_course.md`
+- 编码端-解码端联调约定（当前执行口径）：看 `docs/protocols/protocol_iso_v2_integration_contract.md`
 - 可优化选项（非默认主线）：看 `docs/protocols/protocol_rgb_4color_option.md`
 - 历史自定义方案参考：看 `docs/protocols/protocol_v1.md`
 - 最近发生的有效改动：看 `docs/CHANGELOG.md`
@@ -14,6 +15,7 @@
 - `docs/README.md`：文档入口与阅读顺序
 - `docs/CHANGELOG.md`：集中式改动记录，最新在前
 - `docs/protocols/protocol_iso_qr_v2_course.md`：当前有效的 ISO QR 主线设计与实现说明
+- `docs/protocols/protocol_iso_v2_integration_contract.md`：v2 主线联调约定与执行清单
 - `docs/protocols/protocol_rgb_4color_option.md`：四色增强承载方案（可优化选项，非默认主线）
 - `docs/protocols/protocol_v1.md`：旧的 `V1.6-108-4F` 自定义方案，仅作历史参考
 - 当前默认工作点为 `iso133 / Version 29 / 133x133 + ECC Q`。
@@ -26,8 +28,9 @@
 
 ## 推荐阅读顺序
 1. 先读 `docs/protocols/protocol_iso_qr_v2_course.md`，理解当前主线的接口、流程、产物和限制
-2. 再读 `bin/samples/README.txt`，确认样例和运行产物的来源
-3. 最后读 `docs/CHANGELOG.md`，查看近期变更
+2. 再读 `docs/protocols/protocol_iso_v2_integration_contract.md`，按联调口径执行编码端与解码端对齐
+3. 再读 `bin/samples/README.txt`，确认样例和运行产物的来源
+4. 最后读 `docs/CHANGELOG.md`，查看近期变更
 
 ## 常用联调路径
 - 运行输出：`out/`
