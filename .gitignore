@@ -26,3 +26,9 @@ x86/
 
 # Local Python virtual environment
 /.venv/
+
+# Python 缓存文件
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
