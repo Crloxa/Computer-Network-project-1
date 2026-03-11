@@ -8,6 +8,112 @@
 - 每条记录至少写明：日期、类型、范围、摘要、兼容性
 - 纯格式化、空白调整、错别字修正可不记录
 
+## 2026-03-12
+
+- Type: `Changed`
+  - Scope: `docs`
+  - Summary: 维持现有 `V1.6` 全链路代码不回滚，但将默认 README、协议和样例说明的叙事重点收缩回 `encoder + samples/demo`，并把 `decode` 明确降为仓库内自测辅助
+  - Compatibility: `non-breaking`
+
+- Type: `Changed`
+  - Scope: `protocol`
+  - Summary: 将 `V1.6-108-4F` 的当前单帧运行上限从保守值 `1024 bytes` 提升到理论 payload 容量 `1380 bytes`，并统一 `tail_len_bytes`、切帧、样例和解码校验口径
+  - Compatibility: `breaking`
+
+- Type: `Changed`
+  - Scope: `protocol`
+  - Summary: 将当前默认主线从 `ISO QR v2` 切回 `V1.6-108-4F`，保留 `108x108 / 4 finder / timing / alignment / 1080x1080` 几何布局，但将 header 改为最简控制头：`frame_type + tail_len_bytes + checkcode16 + frame_seq`
+  - Compatibility: `breaking`
+
+- Type: `Changed`
+  - Scope: `code`
+  - Summary: 重写 `main.cpp` 与 `encoder.*` 的默认执行链，恢复 `samples / demo / encode / decode` 的 `v1.6` 口径，并移除默认 CLI 对 `profile/ecc/canvas/markers` 等 `v2` 参数的暴露
+  - Compatibility: `breaking`
+
+- Type: `Changed`
+  - Scope: `decode`
+  - Summary: 新增 `V1.6` 自生成回环解码链路，首版仅保证仓库自生成帧目录和自生成 `demo.mp4` 的恢复，不覆盖拍屏、透视畸变和历史外部样例
+  - Compatibility: `breaking`
+
+- Type: `Changed`
+  - Scope: `docs`
+  - Summary: 更新根 `README.md`、`docs/README.md`、`docs/protocols/protocol_v1.md` 和 `bin/samples/README.txt`，明确 `V1.6-108-4F` 为当前默认主线，`v2` 代码与文档仅作历史参考保留
+  - Compatibility: `non-breaking`
+
+## 2026-03-11
+
+- Type: `Changed`
+  - Scope: `code`
+  - Summary: 将 ISO QR v2 主链从 OpenCV / 现成 QR 编解码切换为仓库内自研 `Version 29 / 133x133 + ECC Q` 实现，并新增 `simple_image.*` 与 `qr_iso_v29.*` 支撑样例、编码、视频桥接和解码流程
+  - Compatibility: `breaking`
+
+- Type: `Changed`
+  - Scope: `protocol`
+  - Summary: 统一 `Version 29 / ECC Q` 的真实容量口径为 `max_frame_bytes=908`、`max_payload_bytes=896`，并移除仓库中残留的旧 `698/686` 口径
+  - Compatibility: `breaking`
+
+- Type: `Changed`
+  - Scope: `layout`
+  - Summary: 调整 carrier 布局，要求四角 marker 与 QR 本体完全分离，避免 marker 覆盖 quiet zone、finder 或数据区，并恢复 `encode -> decode` 的自举闭环
+  - Compatibility: `breaking`
+
+- Type: `Changed`
+  - Scope: `build`
+  - Summary: 更新 Visual Studio 工程编译项，移除主执行链路对 OpenCV 头库的直接依赖，改为编译自研图像与 QR 模块
+  - Compatibility: `breaking`
+
+- Type: `Changed`
+  - Scope: `docs`
+  - Summary: 更新根 `README.md`、`docs/README.md` 与 `docs/protocols/protocol_iso_qr_v2_course.md`，明确当前实现是“自研 QR 本体 + 现有 isoqrv2 外部契约”，首版仅支持 `iso133 / Q / markers=on`
+  - Compatibility: `non-breaking`
+
+- Type: `Changed`
+  - Scope: `docs`
+  - Summary: 清理联调文档中残留的 `QRCodeDetector/OpenCV` 旧表述，并补充“历史第三方资产仍保留在仓库中但不属于当前主执行链路”的说明
+  - Compatibility: `non-breaking`
+
+- Type: `Added`
+  - Scope: `docs`
+  - Summary: 新增 `docs/protocols/protocol_iso_v2_integration_contract.md`，结合 v2 主线固化联调输入契约、输出口径、失败语义与 10 项联调清单推荐内容
+  - Compatibility: `non-breaking`
+
+- Type: `Changed`
+  - Scope: `docs`
+  - Summary: 更新 `docs/README.md` 与根 `README.md` 的阅读入口，新增 v2 联调约定文档索引
+  - Compatibility: `non-breaking`
+
+- Type: `Changed`
+  - Scope: `performance`
+  - Summary: `DecodeIsoPackage` 改为流式处理视频/帧目录，复用 QR detector，并新增 `--protocol-samples on|off` 与 `--decode-debug on|off` 开关以支持快速路径
+  - Compatibility: `non-breaking`
+
+- Type: `Changed`
+  - Scope: `decode`
+  - Summary: `DecodeIsoPackage` 改为在成功、缺帧、CRC 错误、无有效帧和读入失败场景下都稳定输出 `decode_report.tsv` 与 `decode_summary.txt`，并将重复帧显式标记为 `duplicate_frame`
+  - Compatibility: `non-breaking`
+
+- Type: `Added`
+  - Scope: `samples`
+  - Summary: 在 `bin/samples/` 新增 `v2_success`、`v2_missing_frame`、`v2_crc_error` 三套当前 ISO 主线联调基准，以及 `v2_fixture_index.tsv` 与再生成脚本 `scripts/gen_v2_fixtures.py`
+  - Compatibility: `non-breaking`
+
+- Type: `Changed`
+  - Scope: `samples`
+  - Summary: 将旧阶段的 `bin/samples/sample_manifest.tsv` 改名为 `sample_manifest_v1_legacy.tsv`，避免与当前 ISO 主线样例产物的 `sample_manifest.tsv` 命名冲突
+  - Compatibility: `non-breaking`
+
+## 2026-03-10
+
+- Type: `Added`
+  - Scope: `docs`
+  - Summary: 新增 `docs/protocols/protocol_rgb_4color_option.md`，记录“基础 ISO QR + 四色副载层”的可优化方案，并明确其为非默认主线
+  - Compatibility: `non-breaking`
+
+- Type: `Changed`
+  - Scope: `docs`
+  - Summary: 更新 `docs/README.md` 与根 `README.md` 的阅读入口，新增四色可优化文档索引并标注“可优化选项”
+  - Compatibility: `non-breaking`
+
 ## 2026-03-09
 
 - Type: `Changed`
@@ -64,7 +170,7 @@
 
 - Type: `Added`
   - Scope: `docs`
-  - Summary: 新增 `docs/protocols/protocol_iso_qr_v2_course.md`，给出符合课程要求的 ISO QR Version 2 方案（quiet zone、3 finder、1 alignment、信息头与 CRC32）
+  - Summary: 新增 `docs/protocols/protocol_iso_qr_v2_course.md`，给出符合课程要求的标准 ISO QR 主线课程方案文档（quiet zone、3 finder、1 alignment、信息头与 CRC32）
   - Compatibility: `non-breaking`
 
 - Type: `Added`

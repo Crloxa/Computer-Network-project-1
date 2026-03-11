@@ -1,27 +1,39 @@
-`bin/samples/` 下当前已提交的 PNG/TSV 来自旧阶段试验，不再代表现行主线协议。
+`bin/samples/` 现在以 `V1.6-108-4F` 为默认样例口径，仓库内仍保留少量历史 `v2` 文件用于回看，但不再作为当前主线基准。
 
-当前有效的 ISO 主线样例请使用以下命令实时生成：
-- `Project1 samples out/samples`
+默认展示和汇报时，优先使用这里对应的 `samples / demo` 输出，不把 `decode` 产物当成第一叙事中心。
 
-运行后会生成：
-- `sample_iso109_symbol.png`
-- `sample_iso109_carrier.png`
-- `sample_iso109_layout.png`
-- `sample_iso133_symbol.png`
-- `sample_iso133_carrier.png`
-- `sample_iso133_layout.png`
-- `sample_iso145_symbol.png`
-- `sample_iso145_carrier.png`
-- `sample_iso145_layout.png`
-- `sample_iso177_symbol.png`
-- `sample_iso177_carrier.png`
-- `sample_iso177_layout.png`
+## 当前主线样例
+
+通过 `Project1 samples out/samples` 动态生成的当前主线样例包括：
+
+- `layout_guide.*`
+- `sample_full_frame.*`
+- `sample_short_frame.*`
 - `sample_manifest.tsv`
-- `sample_capacity.tsv`
 
-说明：
-- 中央 QR 为真实标准 ISO QR。
-- 外围 carrier 仅用于视频定位与透视矫正，不属于 QR 本体标准。
-- 当前默认工作点是 `Version 29 / 133x133 + ECC Q`。
-- `sample_capacity.tsv` 会列出 `M/Q/H` 三档标准纠错下的容量矩阵。
-- 旧 `layout_guide.png`、`sample_full_frame.png`、`sample_iso_qr_v2_*`、`sample_manifest_qrx_25_3f1a.tsv` 仅作历史参考。
+这些样例主要用于：
+
+- 确认 `108x108 / 4 finder / timing / alignment` 版式是否正确
+- 校对 `16x10` header 保留区位置
+- 作为仓库内自测 `decode` 时的版式参考
+
+## 当前自测回环基准
+
+当前 `decode` 只作为自测辅助。它的默认回环输入不是仓库内静态 PNG，而是由当前编码器生成的运行产物：
+
+- `out/<case>/encode/frames/physical/`
+- `out/<case>/encode/demo.mp4`
+
+当前首版只保证这两类输入可回环，不保证拍屏、透视畸变或历史外部样例。
+
+## 历史参考
+
+以下内容仍可能出现在仓库中，但都不代表当前默认主线：
+
+- `v2_success/`
+- `v2_missing_frame/`
+- `v2_crc_error/`
+- `v2_fixture_index.tsv`
+- 旧阶段的 ISO / QR / layout 对照图
+
+这些文件只保留作历史参考，不应再被当作 `V1.6-108-4F` 的默认验收基准。

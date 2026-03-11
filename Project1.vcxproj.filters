@@ -24,6 +24,15 @@
     <ClCompile Include="src\protocol_v1.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\qr_iso.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\qr_iso_v29.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\simple_image.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="src\main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -32,10 +41,22 @@
     <ClInclude Include="src\encoder.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\image_io.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="src\protocol_iso.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\protocol_v1.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\qr_iso.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\qr_iso_v29.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\simple_image.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
