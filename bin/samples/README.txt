@@ -1,5 +1,7 @@
 `bin/samples/` 现在以 `V1.6-108-4F` 为默认样例口径，仓库内仍保留少量历史 `v2` 文件用于回看，但不再作为当前主线基准。
 
+默认展示和汇报时，优先使用这里对应的 `samples / demo` 输出，不把 `decode` 产物当成第一叙事中心。
+
 ## 当前主线样例
 
 通过 `Project1 samples out/samples` 动态生成的当前主线样例包括：
@@ -9,15 +11,15 @@
 - `sample_short_frame.*`
 - `sample_manifest.tsv`
 
-这些样例用于：
+这些样例主要用于：
 
 - 确认 `108x108 / 4 finder / timing / alignment` 版式是否正确
 - 校对 `16x10` header 保留区位置
-- 作为自生成 `decode` 联调时的版式参考
+- 作为仓库内自测 `decode` 时的版式参考
 
-## 当前回环基准
+## 当前自测回环基准
 
-当前 `decode` 的默认回环输入不是仓库内静态 PNG，而是由当前编码器生成的运行产物：
+当前 `decode` 只作为自测辅助。它的默认回环输入不是仓库内静态 PNG，而是由当前编码器生成的运行产物：
 
 - `out/<case>/encode/frames/physical/`
 - `out/<case>/encode/demo.mp4`

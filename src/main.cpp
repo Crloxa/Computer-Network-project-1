@@ -14,10 +14,10 @@ void PrintUsage(const char* program_name) {
               << "  " << program_name << " encode <input_file> <output_dir> [--fps n] [--repeat n]\n"
               << "  " << program_name << " decode <input_video_or_frame_dir> <output_dir>\n\n"
               << "Commands:\n"
-              << "  samples  Write V1.6-108-4F sample images and layout guide.\n"
-              << "  demo     Alias of encode; keeps the historical demo entry.\n"
+              << "  samples  Write V1.6-108-4F sample images and layout guide for effect preview.\n"
+              << "  demo     Alias of encode; keeps the historical demo entry for effect generation.\n"
               << "  encode   Encode a file into V1.6-108-4F frames and demo.mp4.\n"
-              << "  decode   Decode self-generated V1.6 frames or demo.mp4 back into output.bin.\n";
+              << "  decode   Self-check helper for repository-generated V1.6 frames or demo.mp4.\n";
 }
 
 bool ParseOptions(int argc,

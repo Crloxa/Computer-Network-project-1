@@ -2,6 +2,13 @@
 
 > 本文档描述当前默认主线。仓库仍保留 `protocol_iso.*`、`qr_iso.*` 与对应 `v2` 文档，但它们只作为历史实现参考，不再是默认入口。
 
+当前默认交付口径优先强调：
+
+- 自定义编码方案本身
+- `samples / demo` 生成的版式和效果图
+
+`decode` 继续保留在仓库中，但只作为自测与联调辅助，不作为主叙事中心。
+
 ## 1. 固定几何布局
 
 - 协议标识：`V1.6-108-4F`
@@ -40,7 +47,7 @@
   - `1100` = `End`
 - bits `[4..15]`：`tail_len_bytes`
   - `Single` / `End`：写当前帧真实 payload 长度
-  - `Start` / `Normal`：固定写 `1024`
+  - `Start` / `Normal`：固定写 `1380`
 
 ### 2.2 Row 1：`checkcode16`
 
@@ -73,12 +80,13 @@
   - 两条 timing 线
   - `5 x 5` alignment 区
 - 理论 payload 容量：`1380 bytes`
-- 当前默认运行上限：`1024 bytes / frame`
+- 当前默认运行上限：`1380 bytes / frame`
 - Payload 字节位序：`MSB-first`
 - 未使用的 payload cell 固定填白
 
 ## 4. 编码与视频输出
 
+- 当前默认演示重点是 `encoder + samples/demo`，即“设计编码方案”和“生成效果图/测试输出”。
 - `samples` 生成：
   - `layout_guide.*`
   - `sample_full_frame.*`
@@ -99,6 +107,7 @@
 
 ## 5. 解码范围
 
+- `decode` 是仓库内自测辅助，不是当前默认交付重点。
 - 当前 `decode` 首版只保证以下输入：
   - 仓库当前编码器生成的 `frames/physical/`
   - 由该目录重复封装出来的 `demo.mp4`
@@ -124,6 +133,7 @@
 
 - `Project1 samples out/samples` 能稳定产出三张样例图和清单
 - `Project1 encode input.bin out/encode/input` 能生成逻辑帧、物理帧和 manifest
-- `Project1 decode out/encode/input/frames/physical out/decode/input` 的 `output.bin` 必须与输入逐字节一致
+- `Project1 demo input.jpg out/demo/input` 能生成可直接展示的效果输出
+- `Project1 decode out/encode/input/frames/physical out/decode/input` 的 `output.bin` 必须与输入逐字节一致，但这项属于仓库内自测，不是默认展示中心
 - 多帧输入必须正确走 `Start -> Normal -> End`
 - 缺帧必须输出 `missing_frames.txt`

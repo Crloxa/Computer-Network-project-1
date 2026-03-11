@@ -27,12 +27,6 @@ struct FrameHeader {
     uint16_t checkcode16 = 0;
 };
 
-struct EncoderOptions {
-    int fps = 60;
-    int repeat = 3;
-    int max_payload_bytes = 1024;
-};
-
 constexpr char kProtocolId[] = "V1.6-108-4F";
 constexpr int kLogicalGridSize = 108;
 constexpr int kPhysicalOutputPixels = 1080;
@@ -64,7 +58,13 @@ constexpr int kFinderBottomLeftMin = 100;
 constexpr int kFinderBottomLeftMax = 107;
 constexpr int kPayloadCapacityBits = 11040;
 constexpr int kPayloadCapacityBytes = kPayloadCapacityBits / 8;
-constexpr int kMaxPayloadBytes = 1024;
+constexpr int kMaxPayloadBytes = kPayloadCapacityBytes;
+
+struct EncoderOptions {
+    int fps = 60;
+    int repeat = 3;
+    int max_payload_bytes = kMaxPayloadBytes;
+};
 
 bool IsInBounds(int x, int y);
 bool IsHeaderCell(int x, int y);

@@ -7,6 +7,7 @@
 - 当前有效的工程设计、协议与编解码主线：看 `docs/protocols/protocol_v1.md`
   - 说明：当前代码已经切回 `V1.6-108-4F`
   - 说明：头部语义采用最简控制头，`16x10` 保留区仅使用前 3 行
+  - 说明：默认交付叙事优先强调 `encoder + samples/demo`，`decode` 只保留作仓库内自测辅助
 - 历史 `v2` 主线参考：看 `docs/protocols/protocol_iso_qr_v2_course.md`
 - 历史 `v2` 联调约定：看 `docs/protocols/protocol_iso_v2_integration_contract.md`
 - 可优化选项（非默认主线）：看 `docs/protocols/protocol_rgb_4color_option.md`
@@ -31,7 +32,7 @@
 
 ## 推荐阅读顺序
 
-1. 先读 `docs/protocols/protocol_v1.md`，理解当前主线的几何布局、头部、编码、解码和输出口径
+1. 先读 `docs/protocols/protocol_v1.md`，理解当前主线的几何布局、头部、编码和样例输出口径
 2. 再读 `bin/samples/README.txt`，确认样例和运行产物的来源
 3. 最后读 `docs/CHANGELOG.md`，查看近期变更
 
@@ -44,5 +45,5 @@
   - `Project1 encode input.bin out/encode/input`
 - 当前图像演示命令：
   - `Project1 demo input.jpg out/demo/input`
-- 当前解码命令：
+- 当前自测解码命令：
   - `Project1 decode out/encode/input/frames/physical out/decode/input`

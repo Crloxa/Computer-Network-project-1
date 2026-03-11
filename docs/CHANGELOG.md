@@ -11,6 +11,16 @@
 ## 2026-03-12
 
 - Type: `Changed`
+  - Scope: `docs`
+  - Summary: 维持现有 `V1.6` 全链路代码不回滚，但将默认 README、协议和样例说明的叙事重点收缩回 `encoder + samples/demo`，并把 `decode` 明确降为仓库内自测辅助
+  - Compatibility: `non-breaking`
+
+- Type: `Changed`
+  - Scope: `protocol`
+  - Summary: 将 `V1.6-108-4F` 的当前单帧运行上限从保守值 `1024 bytes` 提升到理论 payload 容量 `1380 bytes`，并统一 `tail_len_bytes`、切帧、样例和解码校验口径
+  - Compatibility: `breaking`
+
+- Type: `Changed`
   - Scope: `protocol`
   - Summary: 将当前默认主线从 `ISO QR v2` 切回 `V1.6-108-4F`，保留 `108x108 / 4 finder / timing / alignment / 1080x1080` 几何布局，但将 header 改为最简控制头：`frame_type + tail_len_bytes + checkcode16 + frame_seq`
   - Compatibility: `breaking`
