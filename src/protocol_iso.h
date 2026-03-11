@@ -43,6 +43,8 @@ struct EncoderOptions {
     int fps = 60;
     int repeat = 3;
     bool enable_carrier_markers = true;
+    bool write_protocol_samples = true;
+    bool write_decode_debug = true;
 };
 
 constexpr uint8_t kProtocolId = 0xA2;

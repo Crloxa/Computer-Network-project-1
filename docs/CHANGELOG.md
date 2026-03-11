@@ -11,6 +11,11 @@
 ## 2026-03-11
 
 - Type: `Changed`
+  - Scope: `performance`
+  - Summary: `DecodeIsoPackage` 改为流式处理视频/帧目录，复用 QR detector，并新增 `--protocol-samples on|off` 与 `--decode-debug on|off` 开关以支持快速路径
+  - Compatibility: `non-breaking`
+
+- Type: `Changed`
   - Scope: `decode`
   - Summary: `DecodeIsoPackage` 改为在成功、缺帧、CRC 错误、无有效帧和读入失败场景下都稳定输出 `decode_report.tsv` 与 `decode_summary.txt`，并将重复帧显式标记为 `duplicate_frame`
   - Compatibility: `non-breaking`

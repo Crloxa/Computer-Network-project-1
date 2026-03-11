@@ -33,6 +33,46 @@ struct DecodeAttemptResult {
     std::string message;
 };
 
+struct EncodeProfileKey {
+    protocol_iso::ProfileId profile_id = protocol_iso::ProfileId::kIso133;
+    protocol_iso::ErrorCorrection error_correction = protocol_iso::ErrorCorrection::kQ;
+
+    bool operator<(const EncodeProfileKey& other) const {
+        if (profile_id != other.profile_id) {
+            return profile_id < other.profile_id;
+        }
+        return error_correction < other.error_correction;
+    }
+};
+
+struct CarrierCacheKey {
+    int canvas_pixels = 1440;
+    bool enable_markers = true;
+
+    bool operator<(const CarrierCacheKey& other) const {
+        if (canvas_pixels != other.canvas_pixels) {
+            return canvas_pixels < other.canvas_pixels;
+        }
+        return enable_markers < other.enable_markers;
+    }
+};
+
+struct CarrierAssets {
+    CarrierLayout layout;
+    cv::Mat base_frame;
+    cv::Mat marker;
+    cv::Mat marker_br;
+};
+
+struct DecodeContext {
+    cv::QRCodeDetector detector;
+    cv::QRCodeDetectorAruco aruco_detector;
+
+    DecodeContext() {
+        detector.setUseAlignmentMarkers(true);
+    }
+};
+
 std::string FrameFileName(std::size_t index) {
     std::ostringstream stream;
     stream << "frame_" << std::setw(5) << std::setfill('0') << index << ".png";
@@ -76,6 +116,85 @@ cv::QRCodeEncoder::CorrectionLevel ToOpenCvCorrection(protocol_iso::ErrorCorrect
     return cv::QRCodeEncoder::CorrectionLevel::CORRECT_LEVEL_Q;
 }
 
+EncodeProfileKey MakeEncodeProfileKey(const protocol_iso::EncoderOptions& options) {
+    return {options.profile_id, options.error_correction};
+}
+
+CarrierCacheKey MakeCarrierCacheKey(const protocol_iso::EncoderOptions& options) {
+    return {options.canvas_pixels, options.enable_carrier_markers};
+}
+
+cv::Mat RenderMarker(int size_pixels, bool invert_center);
+
+cv::QRCodeEncoder::Params MakeQrParams(const protocol_iso::EncoderOptions& options) {
+    const protocol_iso::Profile profile = protocol_iso::ProfileFromId(options.profile_id);
+    cv::QRCodeEncoder::Params params;
+    params.version = profile.version;
+    params.correction_level = ToOpenCvCorrection(options.error_correction);
+    params.mode = cv::QRCodeEncoder::EncodeMode::MODE_BYTE;
+    params.structure_number = 1;
+    return params;
+}
+
+cv::Ptr<cv::QRCodeEncoder> GetOrCreateEncoder(const protocol_iso::EncoderOptions& options) {
+    static std::map<EncodeProfileKey, cv::Ptr<cv::QRCodeEncoder>> encoders;
+
+    const EncodeProfileKey key = MakeEncodeProfileKey(options);
+    const auto it = encoders.find(key);
+    if (it != encoders.end()) {
+        return it->second;
+    }
+
+    const cv::Ptr<cv::QRCodeEncoder> encoder = cv::QRCodeEncoder::create(MakeQrParams(options));
+    encoders.emplace(key, encoder);
+    return encoder;
+}
+
+CarrierAssets BuildCarrierAssets(const protocol_iso::EncoderOptions& options) {
+    CarrierAssets assets;
+    assets.layout = BuildCarrierLayout(options);
+    assets.base_frame = cv::Mat(assets.layout.canvas_pixels,
+                                assets.layout.canvas_pixels,
+                                CV_8UC3,
+                                cv::Scalar(255, 255, 255));
+
+    if (options.enable_carrier_markers) {
+        assets.marker = RenderMarker(assets.layout.marker_size, false);
+        assets.marker_br = RenderMarker(assets.layout.marker_size, true);
+        assets.marker.copyTo(assets.base_frame(cv::Rect(assets.layout.marker_margin,
+                                                        assets.layout.marker_margin,
+                                                        assets.layout.marker_size,
+                                                        assets.layout.marker_size)));
+        assets.marker.copyTo(assets.base_frame(cv::Rect(assets.layout.canvas_pixels - assets.layout.marker_margin - assets.layout.marker_size,
+                                                        assets.layout.marker_margin,
+                                                        assets.layout.marker_size,
+                                                        assets.layout.marker_size)));
+        assets.marker.copyTo(assets.base_frame(cv::Rect(assets.layout.marker_margin,
+                                                        assets.layout.canvas_pixels - assets.layout.marker_margin - assets.layout.marker_size,
+                                                        assets.layout.marker_size,
+                                                        assets.layout.marker_size)));
+        assets.marker_br.copyTo(assets.base_frame(cv::Rect(assets.layout.canvas_pixels - assets.layout.marker_margin - assets.layout.marker_size,
+                                                           assets.layout.canvas_pixels - assets.layout.marker_margin - assets.layout.marker_size,
+                                                           assets.layout.marker_size,
+                                                           assets.layout.marker_size)));
+    }
+
+    return assets;
+}
+
+const CarrierAssets& GetOrCreateCarrierAssets(const protocol_iso::EncoderOptions& options) {
+    static std::map<CarrierCacheKey, CarrierAssets> assets_by_key;
+
+    const CarrierCacheKey key = MakeCarrierCacheKey(options);
+    const auto it = assets_by_key.find(key);
+    if (it != assets_by_key.end()) {
+        return it->second;
+    }
+
+    auto inserted = assets_by_key.emplace(key, BuildCarrierAssets(options));
+    return inserted.first->second;
+}
+
 std::string BytesToString(const std::vector<uint8_t>& bytes) {
     return std::string(reinterpret_cast<const char*>(bytes.data()), bytes.size());
 }
@@ -108,14 +227,7 @@ bool TryEncodeQrBytes(const std::vector<uint8_t>& frame_bytes,
                       cv::Mat* qr_frame,
                       std::string* error_message) {
     try {
-        const protocol_iso::Profile profile = protocol_iso::ProfileFromId(options.profile_id);
-        cv::QRCodeEncoder::Params params;
-        params.version = profile.version;
-        params.correction_level = ToOpenCvCorrection(options.error_correction);
-        params.mode = cv::QRCodeEncoder::EncodeMode::MODE_BYTE;
-        params.structure_number = 1;
-
-        const cv::Ptr<cv::QRCodeEncoder> encoder = cv::QRCodeEncoder::create(params);
+        const cv::Ptr<cv::QRCodeEncoder> encoder = GetOrCreateEncoder(options);
         cv::Mat qr_image;
         encoder->encode(BytesToString(frame_bytes), qr_image);
         if (qr_image.empty()) {
@@ -165,6 +277,14 @@ bool ValidateRenderedScale(const cv::Mat& qr_frame,
 }
 
 int DetermineMaxFrameBytes(const protocol_iso::EncoderOptions& options, std::string* error_message) {
+    static std::map<EncodeProfileKey, int> cached_max_frame_bytes;
+
+    const EncodeProfileKey key = MakeEncodeProfileKey(options);
+    const auto cached = cached_max_frame_bytes.find(key);
+    if (cached != cached_max_frame_bytes.end()) {
+        return cached->second;
+    }
+
     int low = protocol_iso::kFrameOverheadBytes;
     int high = 4096;
     int best = 0;
@@ -189,39 +309,19 @@ int DetermineMaxFrameBytes(const protocol_iso::EncoderOptions& options, std::str
         return -1;
     }
 
+    cached_max_frame_bytes.emplace(key, best);
     return best;
 }
 
 cv::Mat RenderCarrierFrame(const cv::Mat& qr_frame, const protocol_iso::EncoderOptions& options) {
-    const CarrierLayout layout = BuildCarrierLayout(options);
+    const CarrierAssets& assets = GetOrCreateCarrierAssets(options);
+    const CarrierLayout& layout = assets.layout;
 
-    cv::Mat carrier(layout.canvas_pixels, layout.canvas_pixels, CV_8UC3, cv::Scalar(255, 255, 255));
+    cv::Mat carrier = assets.base_frame.clone();
     cv::Mat qr_scaled;
     cv::resize(qr_frame, qr_scaled, cv::Size(layout.qr_size, layout.qr_size), 0.0, 0.0, cv::INTER_NEAREST);
     cv::cvtColor(qr_scaled, qr_scaled, cv::COLOR_GRAY2BGR);
     qr_scaled.copyTo(carrier(cv::Rect(layout.qr_x, layout.qr_y, layout.qr_size, layout.qr_size)));
-
-    if (options.enable_carrier_markers) {
-        const cv::Mat marker = RenderMarker(layout.marker_size, false);
-        const cv::Mat marker_br = RenderMarker(layout.marker_size, true);
-        marker.copyTo(carrier(cv::Rect(layout.marker_margin,
-                                       layout.marker_margin,
-                                       layout.marker_size,
-                                       layout.marker_size)));
-        marker.copyTo(carrier(cv::Rect(layout.canvas_pixels - layout.marker_margin - layout.marker_size,
-                                       layout.marker_margin,
-                                       layout.marker_size,
-                                       layout.marker_size)));
-        marker.copyTo(carrier(cv::Rect(layout.marker_margin,
-                                       layout.canvas_pixels - layout.marker_margin - layout.marker_size,
-                                       layout.marker_size,
-                                       layout.marker_size)));
-        marker_br.copyTo(carrier(cv::Rect(layout.canvas_pixels - layout.marker_margin - layout.marker_size,
-                                          layout.canvas_pixels - layout.marker_margin - layout.marker_size,
-                                          layout.marker_size,
-                                          layout.marker_size)));
-    }
-
     return carrier;
 }
 
@@ -446,6 +546,15 @@ std::vector<uint8_t> MakeSamplePayload(std::size_t payload_size, uint8_t seed) {
     return payload;
 }
 
+bool WriteDebugImageIfEnabled(const std::filesystem::path& path,
+                              const cv::Mat& image,
+                              bool enabled) {
+    if (!enabled || image.empty()) {
+        return true;
+    }
+    return cv::imwrite(path.string(), image);
+}
+
 cv::Point2f AnchorPointForCorner(const cv::RotatedRect& rect, int corner_index) {
     std::array<cv::Point2f, 4> points;
     rect.points(points.data());
@@ -569,13 +678,12 @@ bool TryWarpCarrier(const cv::Mat& frame,
     return true;
 }
 
-std::vector<uint8_t> TryDecodeWithDetector(const cv::Mat& image,
+std::vector<uint8_t> TryDecodeWithDetector(DecodeContext* context,
+                                           const cv::Mat& image,
                                            std::string* method,
                                            std::string* message) {
-    cv::QRCodeDetector detector;
-    detector.setUseAlignmentMarkers(true);
     cv::Mat straight_qr;
-    const std::string decoded = detector.detectAndDecode(image, cv::noArray(), straight_qr);
+    const std::string decoded = context->detector.detectAndDecode(image, cv::noArray(), straight_qr);
     if (!decoded.empty()) {
         if (method != nullptr) {
             *method = "direct";
@@ -586,8 +694,7 @@ std::vector<uint8_t> TryDecodeWithDetector(const cv::Mat& image,
         return StringToBytes(decoded);
     }
 
-    cv::QRCodeDetectorAruco aruco_detector;
-    const std::string fallback = aruco_detector.detectAndDecode(image, cv::noArray(), straight_qr);
+    const std::string fallback = context->aruco_detector.detectAndDecode(image, cv::noArray(), straight_qr);
     if (!fallback.empty()) {
         if (method != nullptr) {
             *method = "aruco";
@@ -601,17 +708,25 @@ std::vector<uint8_t> TryDecodeWithDetector(const cv::Mat& image,
     return {};
 }
 
-DecodeAttemptResult TryDecodeFrame(const cv::Mat& frame, const protocol_iso::EncoderOptions& options) {
+DecodeAttemptResult TryDecodeFrame(DecodeContext* context,
+                                   const cv::Mat& frame,
+                                   const protocol_iso::EncoderOptions& options,
+                                   bool capture_debug_images) {
     DecodeAttemptResult result;
 
     std::string method;
     std::string message;
-    std::vector<uint8_t> decoded = TryDecodeWithDetector(frame, &method, &message);
+    std::vector<uint8_t> decoded = TryDecodeWithDetector(context, frame, &method, &message);
     if (!decoded.empty()) {
         result.success = true;
         result.method = method;
         result.message = message;
         result.frame_bytes = std::move(decoded);
+        return result;
+    }
+
+    if (!options.enable_carrier_markers) {
+        result.message = "Carrier markers are disabled.";
         return result;
     }
 
@@ -623,20 +738,24 @@ DecodeAttemptResult TryDecodeFrame(const cv::Mat& frame, const protocol_iso::Enc
         return result;
     }
 
-    decoded = TryDecodeWithDetector(qr_crop, &method, &message);
+    decoded = TryDecodeWithDetector(context, qr_crop, &method, &message);
     if (!decoded.empty()) {
         result.success = true;
         result.method = "warped-" + method;
         result.message = message;
         result.frame_bytes = std::move(decoded);
-        result.warped_frame = warped;
-        result.qr_crop = qr_crop;
+        if (capture_debug_images) {
+            result.warped_frame = warped;
+            result.qr_crop = qr_crop;
+        }
         return result;
     }
 
     result.message = "Carrier warp succeeded, but QR decode still failed.";
-    result.warped_frame = warped;
-    result.qr_crop = qr_crop;
+    if (capture_debug_images) {
+        result.warped_frame = warped;
+        result.qr_crop = qr_crop;
+    }
     return result;
 }
 
@@ -860,7 +979,7 @@ bool WriteIsoPackage(const std::filesystem::path& input_path,
     const std::filesystem::path sample_dir = output_dir / "protocol_samples";
     if (!EnsureDirectory(qr_dir, error_message) ||
         !EnsureDirectory(carrier_dir, error_message) ||
-        !EnsureDirectory(sample_dir, error_message)) {
+        (options.write_protocol_samples && !EnsureDirectory(sample_dir, error_message))) {
         return false;
     }
 
@@ -875,7 +994,8 @@ bool WriteIsoPackage(const std::filesystem::path& input_path,
         return false;
     }
 
-    if (!WriteIsoSamples(sample_dir, options, error_message)) {
+    if (options.write_protocol_samples &&
+        !WriteIsoSamples(sample_dir, options, error_message)) {
         return false;
     }
 
@@ -912,7 +1032,8 @@ bool WriteIsoPackage(const std::filesystem::path& input_path,
         << "max_payload_bytes=" << (max_frame_bytes - protocol_iso::kFrameOverheadBytes) << '\n'
         << "fps=" << options.fps << '\n'
         << "repeat=" << options.repeat << '\n'
-        << "carrier_markers=" << (options.enable_carrier_markers ? "true" : "false") << '\n';
+        << "carrier_markers=" << (options.enable_carrier_markers ? "true" : "false") << '\n'
+        << "protocol_samples=" << (options.write_protocol_samples ? "true" : "false") << '\n';
 
     return WriteVideo(frames, output_dir, options, error_message);
 }
@@ -928,9 +1049,10 @@ bool DecodeIsoPackage(const std::filesystem::path& input_path,
     const std::filesystem::path source_dir = output_dir / "decode_debug" / "source";
     const std::filesystem::path warped_dir = output_dir / "decode_debug" / "warped";
     const std::filesystem::path crop_dir = output_dir / "decode_debug" / "qr_crop";
-    if (!EnsureDirectory(source_dir, error_message) ||
-        !EnsureDirectory(warped_dir, error_message) ||
-        !EnsureDirectory(crop_dir, error_message)) {
+    if (options.write_decode_debug &&
+        (!EnsureDirectory(source_dir, error_message) ||
+         !EnsureDirectory(warped_dir, error_message) ||
+         !EnsureDirectory(crop_dir, error_message))) {
         return false;
     }
 
@@ -964,12 +1086,84 @@ bool DecodeIsoPackage(const std::filesystem::path& input_path,
         return final_error.empty();
     };
 
-    std::vector<cv::Mat> frames;
+    DecodeContext decode_context;
+    std::optional<uint16_t> expected_total_frames;
+    std::vector<std::vector<uint8_t>> payloads_by_seq;
+    std::vector<bool> payload_present;
+    std::size_t decoded_frame_count = 0U;
+    std::size_t source_frame_count = 0U;
+
+    auto processFrame = [&](const cv::Mat& frame) {
+        const std::size_t index = source_frame_count++;
+        WriteDebugImageIfEnabled(source_dir / FrameFileName(index), frame, options.write_decode_debug);
+
+        DecodeAttemptResult attempt = TryDecodeFrame(&decode_context, frame, options, options.write_decode_debug);
+        DecodedFrameReport report;
+        report.source_index = static_cast<int>(index);
+        report.profile = protocol_iso::ProfileName(options.profile_id);
+        report.ecc = protocol_iso::ErrorCorrectionName(options.error_correction);
+        report.method = attempt.method.empty() ? "none" : attempt.method;
+        report.message = attempt.message;
+
+        WriteDebugImageIfEnabled(warped_dir / FrameFileName(index), attempt.warped_frame, options.write_decode_debug);
+        WriteDebugImageIfEnabled(crop_dir / FrameFileName(index), attempt.qr_crop, options.write_decode_debug);
+
+        if (!attempt.success) {
+            report.message = report.message.empty() ? "decode_failed" : "decode_failed: " + report.message;
+            reports.push_back(std::move(report));
+            return;
+        }
+
+        protocol_iso::FrameHeader header;
+        std::vector<uint8_t> payload;
+        std::string parse_error;
+        if (!protocol_iso::ParseFrameBytes(attempt.frame_bytes, &header, &payload, &parse_error)) {
+            report.message = parse_error;
+            reports.push_back(std::move(report));
+            return;
+        }
+
+        report.success = true;
+        report.frame_seq = header.frame_seq;
+        report.total_frames = header.total_frames;
+        report.payload_len = header.payload_len;
+        report.message = protocol_iso::HeaderToString(header);
+
+        if (!expected_total_frames.has_value()) {
+            expected_total_frames = header.total_frames;
+            payloads_by_seq.resize(header.total_frames);
+            payload_present.assign(header.total_frames, false);
+        } else if (expected_total_frames.value() != header.total_frames) {
+            report.success = false;
+            report.message = "total_frames_conflict";
+            reports.push_back(std::move(report));
+            return;
+        }
+
+        if (header.frame_seq >= expected_total_frames.value()) {
+            report.success = false;
+            report.message = "frame_seq_out_of_range";
+            reports.push_back(std::move(report));
+            return;
+        }
+
+        if (!payload_present[header.frame_seq]) {
+            payloads_by_seq[header.frame_seq] = std::move(payload);
+            payload_present[header.frame_seq] = true;
+            ++decoded_frame_count;
+        } else {
+            report.success = false;
+            report.message = "duplicate_frame";
+        }
+
+        reports.push_back(std::move(report));
+    };
+
     if (std::filesystem::is_directory(input_path)) {
         for (const std::filesystem::path& path : CollectImageFrames(input_path)) {
             cv::Mat frame = cv::imread(path.string(), cv::IMREAD_COLOR);
             if (!frame.empty()) {
-                frames.push_back(frame);
+                processFrame(frame);
             }
         }
     } else {
@@ -981,76 +1175,13 @@ bool DecodeIsoPackage(const std::filesystem::path& input_path,
         cv::Mat frame;
         while (capture.read(frame)) {
             if (!frame.empty()) {
-                frames.push_back(frame.clone());
+                processFrame(frame);
             }
         }
     }
 
-    if (frames.empty()) {
+    if (source_frame_count == 0U) {
         return finalizeDecode("read_error", 0U, 0U, 0U, "No frames could be read from the decode input.");
-    }
-
-    reports.reserve(frames.size());
-
-    std::map<uint16_t, std::vector<uint8_t>> payloads_by_seq;
-    std::optional<uint16_t> expected_total_frames;
-
-    for (std::size_t index = 0; index < frames.size(); ++index) {
-        cv::imwrite((source_dir / FrameFileName(index)).string(), frames[index]);
-
-        DecodeAttemptResult attempt = TryDecodeFrame(frames[index], options);
-        DecodedFrameReport report;
-        report.source_index = static_cast<int>(index);
-        report.profile = protocol_iso::ProfileName(options.profile_id);
-        report.ecc = protocol_iso::ErrorCorrectionName(options.error_correction);
-        report.method = attempt.method.empty() ? "none" : attempt.method;
-        report.message = attempt.message;
-
-        if (!attempt.warped_frame.empty()) {
-            cv::imwrite((warped_dir / FrameFileName(index)).string(), attempt.warped_frame);
-        }
-        if (!attempt.qr_crop.empty()) {
-            cv::imwrite((crop_dir / FrameFileName(index)).string(), attempt.qr_crop);
-        }
-
-        if (!attempt.success) {
-            report.message = report.message.empty() ? "decode_failed" : "decode_failed: " + report.message;
-            reports.push_back(std::move(report));
-            continue;
-        }
-
-        protocol_iso::FrameHeader header;
-        std::vector<uint8_t> payload;
-        std::string parse_error;
-        if (!protocol_iso::ParseFrameBytes(attempt.frame_bytes, &header, &payload, &parse_error)) {
-            report.message = parse_error;
-            reports.push_back(std::move(report));
-            continue;
-        }
-
-        report.success = true;
-        report.frame_seq = header.frame_seq;
-        report.total_frames = header.total_frames;
-        report.payload_len = header.payload_len;
-        report.message = protocol_iso::HeaderToString(header);
-
-        if (!expected_total_frames.has_value()) {
-            expected_total_frames = header.total_frames;
-        } else if (expected_total_frames.value() != header.total_frames) {
-            report.success = false;
-            report.message = "total_frames_conflict";
-            reports.push_back(std::move(report));
-            continue;
-        }
-
-        if (payloads_by_seq.find(header.frame_seq) == payloads_by_seq.end()) {
-            payloads_by_seq.emplace(header.frame_seq, std::move(payload));
-        } else {
-            report.success = false;
-            report.message = "duplicate_frame";
-        }
-
-        reports.push_back(std::move(report));
     }
 
     if (!expected_total_frames.has_value()) {
@@ -1058,22 +1189,27 @@ bool DecodeIsoPackage(const std::filesystem::path& input_path,
     }
 
     for (uint16_t frame_seq = 0; frame_seq < expected_total_frames.value(); ++frame_seq) {
-        if (payloads_by_seq.find(frame_seq) == payloads_by_seq.end()) {
+        if (!payload_present[frame_seq]) {
             missing_frames.push_back(frame_seq);
         }
     }
 
     if (!missing_frames.empty()) {
         return finalizeDecode("missing_frames",
-                              payloads_by_seq.size(),
+                              decoded_frame_count,
                               expected_total_frames.value(),
                               0U,
                               "Decoded ISO frames are incomplete; see missing_frames.txt.");
     }
 
     std::vector<uint8_t> output_bytes;
+    std::size_t output_bytes_size = 0U;
+    for (const std::vector<uint8_t>& payload : payloads_by_seq) {
+        output_bytes_size += payload.size();
+    }
+    output_bytes.reserve(output_bytes_size);
     for (uint16_t frame_seq = 0; frame_seq < expected_total_frames.value(); ++frame_seq) {
-        const std::vector<uint8_t>& payload = payloads_by_seq.at(frame_seq);
+        const std::vector<uint8_t>& payload = payloads_by_seq[frame_seq];
         output_bytes.insert(output_bytes.end(), payload.begin(), payload.end());
     }
 
@@ -1081,7 +1217,7 @@ bool DecodeIsoPackage(const std::filesystem::path& input_path,
     std::ofstream stream(output_file, std::ios::binary);
     if (!stream.is_open()) {
         return finalizeDecode("write_error",
-                              payloads_by_seq.size(),
+                              decoded_frame_count,
                               expected_total_frames.value(),
                               0U,
                               "Failed to write decoded output file: " + output_file.string());
@@ -1090,7 +1226,7 @@ bool DecodeIsoPackage(const std::filesystem::path& input_path,
                  static_cast<std::streamsize>(output_bytes.size()));
     stream.close();
     return finalizeDecode("success",
-                          payloads_by_seq.size(),
+                          decoded_frame_count,
                           expected_total_frames.value(),
                           output_bytes.size(),
                           "");

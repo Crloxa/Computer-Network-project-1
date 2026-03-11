@@ -158,6 +158,8 @@ CRC32 规则：
 | `fps` | `60` | 视频输出帧率 |
 | `repeat` | `3` | 每个逻辑帧重复写入次数 |
 | `enable_carrier_markers` | `true` | 是否绘制四角定位标记 |
+| `write_protocol_samples` | `true` | `encode` 时是否额外生成 `protocol_samples/` |
+| `write_decode_debug` | `true` | `decode` 时是否写出 `decode_debug/*` |
 
 参数校验规则：
 - `--canvas >= 720`
@@ -180,7 +182,7 @@ Project1 samples <output_dir> [--profile iso109|iso133|iso145|iso177] [--ecc M|Q
 ### 7.2 `encode`
 
 ```bash
-Project1 encode <input_file> <output_dir> [--profile iso109|iso133|iso145|iso177] [--ecc M|Q|H] [--canvas px] [--fps n] [--repeat n]
+Project1 encode <input_file> <output_dir> [--profile iso109|iso133|iso145|iso177] [--ecc M|Q|H] [--canvas px] [--fps n] [--repeat n] [--protocol-samples on|off]
 ```
 
 作用：
@@ -191,7 +193,7 @@ Project1 encode <input_file> <output_dir> [--profile iso109|iso133|iso145|iso177
 ### 7.3 `decode`
 
 ```bash
-Project1 decode <input_video_or_frame_dir> <output_dir> [--profile iso109|iso133|iso145|iso177] [--ecc M|Q|H] [--canvas px]
+Project1 decode <input_video_or_frame_dir> <output_dir> [--profile iso109|iso133|iso145|iso177] [--ecc M|Q|H] [--canvas px] [--decode-debug on|off]
 ```
 
 作用：
@@ -356,7 +358,7 @@ module_pixels = qr_size / qr_frame.cols
 输出目录结构：
 - `frames/qr/frame_XXXXX.png`
 - `frames/carrier/frame_XXXXX.png`
-- `protocol_samples/`
+- `protocol_samples/`（默认生成，可通过 `--protocol-samples off` 关闭）
 - `frame_manifest.tsv`
 - `input_info.txt`
 - `demo.mp4`
@@ -390,6 +392,7 @@ module_pixels = qr_size / qr_frame.cols
 - `fps`
 - `repeat`
 - `carrier_markers`
+- `protocol_samples`
 
 ### 10.3 `decode`
 
@@ -398,9 +401,9 @@ module_pixels = qr_size / qr_frame.cols
 - `decode_report.tsv`
 - `decode_summary.txt`
 - `missing_frames.txt`（仅缺帧时）
-- `decode_debug/source/`
-- `decode_debug/warped/`
-- `decode_debug/qr_crop/`
+- `decode_debug/source/`（默认生成，可通过 `--decode-debug off` 关闭）
+- `decode_debug/warped/`（默认生成，可通过 `--decode-debug off` 关闭）
+- `decode_debug/qr_crop/`（默认生成，可通过 `--decode-debug off` 关闭）
 
 `decode_report.tsv` 列：
 
