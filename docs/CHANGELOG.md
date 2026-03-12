@@ -10,6 +10,11 @@
 
 ## 2026-03-12
 
+- Type: `Added`
+  - Scope: `legacy-example`
+  - Summary: 从 `origin/examples` 分支迁移根目录历史示例工程 `Visual-Net/` 到当前分支根目录，保留其源码、说明文档、样例图片以及随附的 Windows 运行依赖，便于对照历史实现
+  - Compatibility: `non-breaking`
+
 - Type: `Changed`
   - Scope: `windows`
   - Summary: 为当前 `V1.6-108-4F` 主线补充 Windows 兼容层和保姆级运行入口：CLI 接受并忽略历史 `--profile/--ecc/--canvas` 等参数、增加 `--version`、新增 `scripts/run_project1.ps1` 与 `docs/windows_quickstart.md`，并修正无 `ffmpeg` 时 `samples/encode` 退化为 BMP-only 的行为与文档口径
