@@ -1,8 +1,14 @@
 # ISO QR 主线设计与实现说明
 
+> 历史参考警告：本文档描述的是旧 ISO QR v2 路线，不是当前默认主线。
+>
+> 当前仓库默认执行链已经切回 `docs/protocols/protocol_v1.md` 的 `V1.6-108-4F`。
+>
+> 不要直接复制本文档中的 `--profile / --ecc / --canvas / --decode-debug` 等命令到当前默认可执行；若组员在 Windows 上联调，先看 `docs/windows_quickstart.md`。
+
 ## 1. 文档定位
 
-本文档是当前主线实现的工程交接文档，覆盖：
+本文档是历史 ISO QR v2 实现的工程交接文档，覆盖：
 - 设计目标与边界
 - 协议与参数接口
 - 编码、载体、视频、解码与重组流程

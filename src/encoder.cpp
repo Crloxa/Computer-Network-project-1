@@ -8,11 +8,16 @@
 #include <cstdlib>
 #include <fstream>
 #include <iomanip>
+#include <iostream>
 #include <map>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <system_error>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 namespace demo_encoder {
 namespace {
@@ -48,6 +53,10 @@ std::string QuotePath(const std::filesystem::path& path) {
     return "\"" + path.string() + "\"";
 }
 
+void PrintRuntimeWarning(const std::string& message) {
+    std::cerr << "[warning] " << message << std::endl;
+}
+
 bool EnsureDirectory(const std::filesystem::path& path, std::string* error_message) {
     std::error_code error;
     if (std::filesystem::exists(path, error)) {
@@ -62,14 +71,93 @@ bool EnsureDirectory(const std::filesystem::path& path, std::string* error_messa
     return false;
 }
 
+std::filesystem::path NormalizePath(const std::filesystem::path& path) {
+    std::error_code error;
+    const std::filesystem::path weak = std::filesystem::weakly_canonical(path, error);
+    if (!error) {
+        return weak;
+    }
+    const std::filesystem::path absolute = std::filesystem::absolute(path, error);
+    if (!error) {
+        return absolute;
+    }
+    return path;
+}
+
+std::filesystem::path FindRepoRoot(const std::filesystem::path& start_path) {
+    std::error_code error;
+    std::filesystem::path cursor = NormalizePath(start_path);
+    if (std::filesystem::is_regular_file(cursor, error)) {
+        cursor = cursor.parent_path();
+    }
+    while (!cursor.empty()) {
+        if (std::filesystem::exists(cursor / "Project1.sln", error)) {
+            return cursor;
+        }
+        const std::filesystem::path parent = cursor.parent_path();
+        if (parent == cursor) {
+            break;
+        }
+        cursor = parent;
+    }
+    return {};
+}
+
+std::filesystem::path GetExecutableDirectory() {
+#ifdef _WIN32
+    std::wstring buffer(MAX_PATH, L'\0');
+    DWORD length = 0;
+    while (true) {
+        length = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+        if (length == 0U) {
+            return {};
+        }
+        if (length < buffer.size() - 1U) {
+            buffer.resize(length);
+            return std::filesystem::path(buffer).parent_path();
+        }
+        buffer.resize(buffer.size() * 2U);
+    }
+#else
+    std::error_code error;
+    return std::filesystem::current_path(error);
+#endif
+}
+
+std::vector<std::filesystem::path> BuildFfmpegSearchRoots() {
+    std::vector<std::filesystem::path> roots;
+    auto append_unique = [&roots](const std::filesystem::path& candidate) {
+        if (candidate.empty()) {
+            return;
+        }
+        const std::filesystem::path normalized = NormalizePath(candidate);
+        const auto duplicate = std::find(roots.begin(), roots.end(), normalized);
+        if (duplicate == roots.end()) {
+            roots.push_back(normalized);
+        }
+    };
+
+    const std::filesystem::path executable_dir = GetExecutableDirectory();
+    append_unique(executable_dir);
+    append_unique(FindRepoRoot(executable_dir));
+    std::error_code error;
+    append_unique(std::filesystem::current_path(error));
+    append_unique(FindRepoRoot(std::filesystem::current_path(error)));
+    return roots;
+}
+
 std::filesystem::path FindBundledFfmpeg() {
 #ifdef _WIN32
-    const std::filesystem::path candidate = std::filesystem::current_path() / "ffmpeg" / "bin" / "ffmpeg.exe";
+    constexpr const char* kFfmpegName = "ffmpeg.exe";
 #else
-    const std::filesystem::path candidate = std::filesystem::current_path() / "ffmpeg" / "bin" / "ffmpeg";
+    constexpr const char* kFfmpegName = "ffmpeg";
 #endif
-    if (std::filesystem::exists(candidate)) {
-        return candidate;
+    for (const std::filesystem::path& root : BuildFfmpegSearchRoots()) {
+        const std::filesystem::path candidate = root / "ffmpeg" / "bin" / kFfmpegName;
+        std::error_code error;
+        if (std::filesystem::exists(candidate, error)) {
+            return candidate;
+        }
     }
     return {};
 }
@@ -115,26 +203,19 @@ std::optional<std::string> FindImageConverterCommand() {
     return FindFfmpegCommand();
 }
 
-bool ConvertBmpToPng(const std::filesystem::path& bmp_path,
+bool ConvertBmpToPng(const std::string& command,
+                    const std::filesystem::path& bmp_path,
                      const std::filesystem::path& png_path,
                      std::string* error_message) {
-    const std::optional<std::string> command = FindImageConverterCommand();
-    if (!command.has_value()) {
-        if (error_message != nullptr) {
-            *error_message = "No image converter was found (ffmpeg or sips).";
-        }
-        return false;
-    }
-
     std::string invocation;
-    if (command.value() == "sips") {
+    if (command == "sips") {
 #ifdef _WIN32
         invocation.clear();
 #else
         invocation = "sips -s format png " + QuotePath(bmp_path) + " --out " + QuotePath(png_path) + RedirectOutput();
 #endif
     } else {
-        invocation = command.value() + " -y -i " + QuotePath(bmp_path) + " " + QuotePath(png_path) + RedirectOutput();
+        invocation = command + " -y -i " + QuotePath(bmp_path) + " " + QuotePath(png_path) + RedirectOutput();
     }
     if (invocation.empty() || !RunCommand(invocation)) {
         if (error_message != nullptr) {
@@ -151,7 +232,11 @@ bool ConvertImageToBmp(const std::filesystem::path& input_path,
     const std::optional<std::string> command = FindImageConverterCommand();
     if (!command.has_value()) {
         if (error_message != nullptr) {
-            *error_message = "No image converter was found (ffmpeg or sips).";
+            *error_message = "No image converter was found. Non-BMP inputs require ffmpeg"
+#ifndef _WIN32
+                             " or sips"
+#endif
+                             ".";
         }
         return false;
     }
@@ -179,16 +264,28 @@ bool WriteImageArtifacts(const std::filesystem::path& image_dir,
                          const std::filesystem::path& png_dir,
                          const std::string& file_name,
                          const image_io::RgbImage& image,
+                         const std::optional<std::string>& image_converter,
                          std::string* error_message) {
-    if (!EnsureDirectory(image_dir, error_message) || !EnsureDirectory(png_dir, error_message)) {
+    if (!EnsureDirectory(image_dir, error_message)) {
         return false;
     }
     const std::filesystem::path bmp_path = image_dir / file_name;
     if (!image_io::WriteBmp(bmp_path, image, error_message)) {
         return false;
     }
+    if (!image_converter.has_value()) {
+        return true;
+    }
+    if (!EnsureDirectory(png_dir, error_message)) {
+        return false;
+    }
     const std::filesystem::path png_path = png_dir / (std::filesystem::path(file_name).stem().string() + ".png");
-    return ConvertBmpToPng(bmp_path, png_path, error_message);
+    std::string png_error;
+    if (!ConvertBmpToPng(image_converter.value(), bmp_path, png_path, &png_error)) {
+        PrintRuntimeWarning("PNG 镜像生成失败，已保留 BMP：" + file_name + "；原因：" + png_error);
+        return true;
+    }
+    return true;
 }
 
 std::vector<uint8_t> ReadFileBytesInternal(const std::filesystem::path& input_path) {
@@ -500,10 +597,13 @@ bool WriteRepeatedVideo(const std::vector<EncodedFrame>& frames,
                         std::string* error_message) {
     const std::optional<std::string> ffmpeg = FindFfmpegCommand();
     if (!ffmpeg.has_value()) {
+        const std::string status = "ffmpeg executable was not found; demo.mp4 was not generated.\n";
+        std::ofstream(output_dir / "video_status.txt") << status;
+        PrintRuntimeWarning("未找到 ffmpeg，可继续使用 BMP 帧目录；demo.mp4 未生成。");
         if (error_message != nullptr) {
-            *error_message = "ffmpeg executable was not found; demo.mp4 was not generated.";
+            error_message->clear();
         }
-        return false;
+        return true;
     }
 
     const std::filesystem::path temp_dir = output_dir / "_video_bmp";
@@ -525,10 +625,13 @@ bool WriteRepeatedVideo(const std::vector<EncodedFrame>& frames,
                                 " -i " + QuotePath(temp_dir / "frame_%05d.bmp") +
                                 " -pix_fmt yuv420p " + QuotePath(output_path) + RedirectOutput();
     if (!RunCommand(command)) {
+        const std::string status = "ffmpeg failed while writing demo.mp4.\n";
+        std::ofstream(output_dir / "video_status.txt") << status;
+        PrintRuntimeWarning("ffmpeg 生成 demo.mp4 失败，已保留 BMP 帧目录。");
         if (error_message != nullptr) {
-            *error_message = "ffmpeg failed while writing demo.mp4.";
+            error_message->clear();
         }
-        return false;
+        return true;
     }
     std::filesystem::remove_all(temp_dir);
     std::ofstream(output_dir / "video_status.txt") << "Video encoded with ffmpeg from V1.6 internal BMP frames.\n";
@@ -551,6 +654,10 @@ bool LoadImageAnyFormat(const std::filesystem::path& path,
     }
     const std::filesystem::path bmp_path = temp_dir / (path.stem().string() + ".bmp");
     if (!ConvertImageToBmp(path, bmp_path, error_message)) {
+        if (error_message != nullptr && !error_message->empty() &&
+            error_message->find("No image converter was found") != std::string::npos) {
+            *error_message = "Decoding PNG/JPG inputs requires ffmpeg (or sips on macOS): " + path.string();
+        }
         return false;
     }
     return image_io::ReadBmp(bmp_path, image, error_message);
@@ -583,7 +690,7 @@ std::vector<ImageFile> CollectDecodeImages(const std::filesystem::path& input_pa
     const std::optional<std::string> ffmpeg = FindFfmpegCommand();
     if (!ffmpeg.has_value()) {
         if (error_message != nullptr) {
-            *error_message = "Video decode requires an ffmpeg executable.";
+            *error_message = "Video decode requires an ffmpeg executable; BMP frame directories work without it.";
         }
         return {};
     }
@@ -854,14 +961,19 @@ bool WriteV1Samples(const std::filesystem::path& output_dir,
         return false;
     }
 
+    const std::optional<std::string> image_converter = FindImageConverterCommand();
+    if (!image_converter.has_value()) {
+        PrintRuntimeWarning("未找到 PNG 转换器，samples 只会生成 BMP 文件。");
+    }
+
     const EncodedFrame full_frame = EncodeBytesToFrames(
         MakeSamplePayload(static_cast<std::size_t>(options.max_payload_bytes), 0x29U), options).front();
     const EncodedFrame short_frame = EncodeBytesToFrames(MakeSamplePayload(32U, 0x6AU), options).front();
     const image_io::RgbImage layout_guide = RenderLayoutGuide();
 
-    if (!WriteImageArtifacts(output_dir, output_dir / "png_mirror", "layout_guide.bmp", layout_guide, error_message) ||
-        !WriteImageArtifacts(output_dir, output_dir / "png_mirror", "sample_full_frame.bmp", full_frame.physical_frame, error_message) ||
-        !WriteImageArtifacts(output_dir, output_dir / "png_mirror", "sample_short_frame.bmp", short_frame.physical_frame, error_message) ||
+    if (!WriteImageArtifacts(output_dir, output_dir / "png_mirror", "layout_guide.bmp", layout_guide, image_converter, error_message) ||
+        !WriteImageArtifacts(output_dir, output_dir / "png_mirror", "sample_full_frame.bmp", full_frame.physical_frame, image_converter, error_message) ||
+        !WriteImageArtifacts(output_dir, output_dir / "png_mirror", "sample_short_frame.bmp", short_frame.physical_frame, image_converter, error_message) ||
         !WriteSampleManifest(output_dir / "sample_manifest.tsv", error_message)) {
         return false;
     }
@@ -885,6 +997,11 @@ bool WriteV1Package(const std::filesystem::path& input_path,
         return false;
     }
 
+    const std::optional<std::string> image_converter = FindImageConverterCommand();
+    if (!image_converter.has_value()) {
+        PrintRuntimeWarning("未找到 PNG 转换器，encode 只会生成 BMP 帧与 manifest。");
+    }
+
     const std::vector<uint8_t> input_bytes = ReadFileBytesInternal(input_path);
     std::vector<EncodedFrame> frames;
     try {
@@ -902,8 +1019,8 @@ bool WriteV1Package(const std::filesystem::path& input_path,
 
     for (std::size_t index = 0; index < frames.size(); ++index) {
         const std::string file_name = FrameFileName(index);
-        if (!WriteImageArtifacts(logical_dir, logical_dir / "png_mirror", file_name, frames[index].logical_frame, error_message) ||
-            !WriteImageArtifacts(physical_dir, physical_dir / "png_mirror", file_name, frames[index].physical_frame, error_message)) {
+        if (!WriteImageArtifacts(logical_dir, logical_dir / "png_mirror", file_name, frames[index].logical_frame, image_converter, error_message) ||
+            !WriteImageArtifacts(physical_dir, physical_dir / "png_mirror", file_name, frames[index].physical_frame, image_converter, error_message)) {
             return false;
         }
     }
@@ -926,8 +1043,6 @@ bool WriteV1Package(const std::filesystem::path& input_path,
         << "repeat=" << options.repeat << '\n';
 
     if (!WriteRepeatedVideo(frames, output_dir, options, error_message)) {
-        std::ofstream(output_dir / "video_status.txt")
-            << (error_message != nullptr ? *error_message : "demo.mp4 was not generated.") << '\n';
         return false;
     }
     return true;
