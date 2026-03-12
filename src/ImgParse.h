@@ -1,6 +1,10 @@
 #pragma once
 #include<opencv2/opencv.hpp>
 #include<cstdio>
+#include <stdexcept>
+#include <queue>
+#include <cmath>
+#include <array>
 
 namespace ImgParse {			//命名空间，包含了所有图像处理相关的函数
 	
@@ -28,19 +32,26 @@ namespace ImgParse {			//命名空间，包含了所有图像处理相关的函�
 
 	pair<float, float> CalExtendVec(const Point2f& poi0, const Point2f& poi1, const Point2f& poi2, float bias);		//计算外角平分向量
 
-	Mat CropParallelRect(const Mat& srcImg, const vector<Point2f>& srcPoints, Size size);		//四边形透视变换
+	Mat CropParallelRect(const Mat& srcImg, const vector<Point2f>& srcPoints, Size size = { 0, 0 });		//四边形透视变换
 
-	bool isRightlAngle(float angle);//判断角度是否为直角
+	bool isRightlAngle(float angle, float tolerance = 15.0f);//判断角度是否为直角
 
-	bool IsQrTypeRateLegal(float rate);//验证二维码类型比例是否合法
+	bool IsQrTypeRateLegal(float rate, float minRate = 1.8f, float maxRate = 2.2f);//验证二维码类型比例是否合法
 
-	bool isLegalDistanceRate(float rate);//验证距离比例是否合法
+	bool isLegalDistanceRate(float rate, float expectedDistance,
+		float minRelativeTolerance = 0.1f, float maxRelativeTolerance = 0.15f);//验证距离比例是否合法
 
 	bool FindForthPoint(vector<QrcodeParse::ParseInfo>& PointsInfo,
 		float typeRatioMin = 1.8f, float typeRatioMax = 2.2f,
 		float tolerance = 15.0f,
 		float distExpectedDist = 100.0f);//查找/计算第四个点信息
-
+	
+	struct AdjustmentConfig;	struct AdjustmentConfig {
+		float lengthWeightFactor;    // 长度权重因子
+		float secondOrderFactor;     // 二阶调整因子
+		float forthCornerRatio;      // 第四角的调整比例
+		bool useAdaptiveLength;      // 是否使用自适应长度
+	};
 	vector<Point2f> AdjustForthPoint(const vector<QrcodeParse::ParseInfo> PointsInfo,
 		bool tag,
 		const AdjustmentConfig& config = AdjustmentConfig{
@@ -56,7 +67,11 @@ namespace ImgParse {			//命名空间，包含了所有图像处理相关的函�
 	
 	void Resize(Mat& mat);		//缩放到108x108
 
-	bool Main(const Mat& srcImg, Mat& disImg);//主函数：完整的二维码检测流程
+	bool Main(const Mat& srcImg, Mat& disImg,
+		const AdjustmentConfig& config = AdjustmentConfig{
+			0.125f, 9.0f / 14.0f * std::sqrt(2.0f),
+			11.0f / 18.0f, false
+		});//主函数：完整的二维码检测流程
 
 	void __DisPlay(const char* ImgPath);//调试显示函数
 

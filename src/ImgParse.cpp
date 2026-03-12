@@ -1,4 +1,4 @@
-#include"picture.h"
+#include"ImgParse.h"
 
 //#define FIND_QRPOINT_DEBUG 1
 //#define CropParallelRect_DEBUG 1
@@ -110,7 +110,7 @@ namespace ImgParse
     }
 
     //增加输入验证与异常处理
-    Mat CropParallelRect(const Mat& srcImg, const vector<Point2f>& srcPoints, Size size = { 0, 0 })
+    Mat CropParallelRect(const Mat& srcImg, const vector<Point2f>& srcPoints, Size size )
     {
         // 验证输入点数量
         if (srcPoints.size() != 4) {
