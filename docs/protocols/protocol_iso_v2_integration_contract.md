@@ -1,8 +1,12 @@
 # ISO QR V2 联调约定（编码端-解码端）
 
-> 状态说明：本文档是当前主线联调契约，用于编码端与解码端统一执行口径。
+> 历史参考警告：本文档对应旧 ISO QR v2 联调口径，不是当前默认主线。
 >
-> 协议主规范仍以 `docs/protocols/protocol_iso_qr_v2_course.md` 为准；本文件补充联调执行级约定。
+> 当前默认执行链已经切回 `docs/protocols/protocol_v1.md` 的 `V1.6-108-4F`；Windows 组员先看 `docs/windows_quickstart.md`。
+>
+> 不要直接复制本文档里的 `--profile / --ecc / --canvas` 命令到当前默认可执行。
+>
+> 协议主规范仍以 `docs/protocols/protocol_iso_qr_v2_course.md` 为准；本文件补充历史 v2 联调执行级约定。
 
 ## 1. 文档目标
 

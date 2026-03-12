@@ -11,6 +11,16 @@
 ## 2026-03-12
 
 - Type: `Changed`
+  - Scope: `windows`
+  - Summary: 为当前 `V1.6-108-4F` 主线补充 Windows 兼容层和保姆级运行入口：CLI 接受并忽略历史 `--profile/--ecc/--canvas` 等参数、增加 `--version`、新增 `scripts/run_project1.ps1` 与 `docs/windows_quickstart.md`，并修正无 `ffmpeg` 时 `samples/encode` 退化为 BMP-only 的行为与文档口径
+  - Compatibility: `non-breaking`
+
+- Type: `Changed`
+  - Scope: `build`
+  - Summary: 将历史 `protocol_iso.*` 与 `qr_iso.*` 从默认 Visual Studio 工程编译清单中移除，保留源码仅作历史参考，降低 Windows 端误判默认执行链为旧 ISO 路线的概率
+  - Compatibility: `non-breaking`
+
+- Type: `Changed`
   - Scope: `docs`
   - Summary: 维持现有 `V1.6` 全链路代码不回滚，但将默认 README、协议和样例说明的叙事重点收缩回 `encoder + samples/demo`，并把 `decode` 明确降为仓库内自测辅助
   - Compatibility: `non-breaking`

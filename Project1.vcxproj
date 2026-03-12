@@ -124,17 +124,13 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="src\encoder.cpp" />
-    <ClCompile Include="src\protocol_iso.cpp" />
     <ClCompile Include="src\protocol_v1.cpp" />
-    <ClCompile Include="src\qr_iso.cpp" />
     <ClCompile Include="src\simple_image.cpp" />
     <ClCompile Include="src\main.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\encoder.h" />
-    <ClInclude Include="src\protocol_iso.h" />
     <ClInclude Include="src\protocol_v1.h" />
-    <ClInclude Include="src\qr_iso.h" />
     <ClInclude Include="src\simple_image.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
