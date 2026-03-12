@@ -1,5 +1,4 @@
 ﻿#pragma once
-#pragma once
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
@@ -18,3 +17,4 @@ namespace FFMPEG
 		unsigned kbps = 0);                //֡输出视频码率默认其0
 	//通过文件系统（目录和文件）在模块间传递数据
 }
+
