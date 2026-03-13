@@ -21,7 +21,8 @@
 
 namespace Code
 {
-	constexpr int BytesPerFrame = 2240;
+	constexpr int BytesPerFrame = 3968;
+	constexpr int EncodedPayloadBytesPerFrame = 4477;
 	constexpr int FrameSize = 144;
 	constexpr int FrameOutputRate = 10;
 	constexpr int FrameOutputSize = FrameSize * FrameOutputRate;
@@ -38,8 +39,18 @@ namespace Code
 	constexpr int HeaderFieldBits = 16;
 	constexpr int HeaderBitWidth = 1;
 	constexpr int HeaderInnerLeft = 0;
-	constexpr int PayloadBitCount = BytesPerFrame * 8;
+	constexpr int PayloadCellCount = EncodedPayloadBytesPerFrame * 4;
 	constexpr int SmallQrSafetyWidth = 3;
+	constexpr int CalibrationTop = 3;
+	constexpr int CalibrationLeft = 37;
+	constexpr int CalibrationHeight = 2;
+	constexpr int CalibrationWidth = 8;
+	constexpr int CalibrationBlockWidth = 2;
+	constexpr int InterleaveBlockSize = 8;
+	constexpr int EccDataBytes = 16;
+	constexpr int EccBytes = 2;
+	constexpr int EccGroupBytes = EccDataBytes + EccBytes;
+	constexpr int EccGroupCount = BytesPerFrame / EccDataBytes;
 
 	struct CellPos
 	{
@@ -77,9 +88,15 @@ namespace Code
 		Vec3b(255, 0, 0), Vec3b(255, 0, 255), Vec3b(255, 255, 0), Vec3b(255, 255, 255)
 	};
 
-	const std::array<DebugRegion, 7> kDebugRegions =
+	const std::array<int, 4> payloadColorIndex =
+	{{
+		Black, 1, 2, White
+	}};
+
+	const std::array<DebugRegion, 8> kDebugRegions =
 	{{
 		{"header", HeaderTop, HeaderLeft, HeaderHeight, HeaderWidth, Vec3b(0, 0, 255)},
+		{"calibration", CalibrationTop, CalibrationLeft, CalibrationHeight, CalibrationWidth, Vec3b(255, 128, 0)},
 		{"qr_top_left", 0, 0, QrPointSize, QrPointSize, Vec3b(255, 0, 0)},
 		{"qr_top_right", 0, FrameSize - QrPointSize, QrPointSize, QrPointSize, Vec3b(0, 255, 0)},
 		{"qr_bottom_left", FrameSize - QrPointSize, 0, QrPointSize, QrPointSize, Vec3b(0, 255, 255)},
@@ -125,9 +142,15 @@ namespace Code
 			col >= HeaderLeft && col < HeaderLeft + HeaderWidth;
 	}
 
+	bool isInsideCalibrationStrip(int row, int col)
+	{
+		return row >= CalibrationTop && row < CalibrationTop + CalibrationHeight &&
+			col >= CalibrationLeft && col < CalibrationLeft + CalibrationWidth;
+	}
+
 	bool isReservedCell(int row, int col)
 	{
-		if (isInsideSafeArea(row, col) || isInsideMainQrPoint(row, col) || isInsideHeader(row, col))
+		if (isInsideSafeArea(row, col) || isInsideMainQrPoint(row, col) || isInsideHeader(row, col) || isInsideCalibrationStrip(row, col))
 		{
 			return true;
 		}
@@ -138,52 +161,164 @@ namespace Code
 		return false;
 	}
 
-	void fillBinaryNoiseCell(Vec3b& cell)
+	std::vector<CellPos> BuildInterleavedPayloadCells()
 	{
-		cell = pixel[(std::rand() & 1) ? White : Black];
+		std::vector<CellPos> payloadCells;
+		payloadCells.reserve(FrameSize * FrameSize);
+		for (int row = 0; row < FrameSize; ++row)
+		{
+			for (int col = 0; col < FrameSize; ++col)
+			{
+				if (!isReservedCell(row, col))
+				{
+					payloadCells.push_back({ row, col });
+				}
+			}
+		}
+		const int blockRows = (FrameSize + InterleaveBlockSize - 1) / InterleaveBlockSize;
+		const int blockCols = (FrameSize + InterleaveBlockSize - 1) / InterleaveBlockSize;
+		std::vector<std::vector<CellPos>> blocks(blockRows * blockCols);
+		for (const auto& cell : payloadCells)
+		{
+			const int blockRow = cell.row / InterleaveBlockSize;
+			const int blockCol = cell.col / InterleaveBlockSize;
+			blocks[blockRow * blockCols + blockCol].push_back(cell);
+		}
+
+		std::vector<CellPos> interleaved;
+		interleaved.reserve(payloadCells.size());
+		size_t written = 0;
+		while (written < payloadCells.size())
+		{
+			for (auto& block : blocks)
+			{
+				if (written >= block.size())
+				{
+					continue;
+				}
+				interleaved.push_back(block[written]);
+			}
+			++written;
+		}
+		if (interleaved.size() < PayloadCellCount)
+		{
+			std::abort();
+		}
+		interleaved.resize(PayloadCellCount);
+		return interleaved;
 	}
 
 	const std::vector<CellPos>& getPayloadCells()
 	{
-		static const std::vector<CellPos> cells = []()
-		{
-			std::vector<CellPos> payloadCells;
-			payloadCells.reserve(FrameSize * FrameSize);
-			for (int row = 0; row < FrameSize; ++row)
-			{
-				for (int col = 0; col < FrameSize; ++col)
-				{
-					if (!isReservedCell(row, col))
-					{
-						payloadCells.push_back({ row, col });
-					}
-				}
-			}
-			if (payloadCells.size() < PayloadBitCount)
-			{
-				std::abort();
-			}
-			payloadCells.resize(PayloadBitCount);
-			return payloadCells;
-		}();
+		static const std::vector<CellPos> cells = BuildInterleavedPayloadCells();
 		return cells;
 	}
 
-	void writeBytesToCells(Mat& mat, const unsigned char* info, int len, const std::vector<CellPos>& cells)
+	void writePayloadColorCell(Mat& mat, int row, int col, unsigned char twoBits)
 	{
-		int bitIndex = 0;
-		const int totalBits = len * 8;
+		mat.at<Vec3b>(row, col) = pixel[payloadColorIndex[twoBits & 0x03]];
+	}
+
+	void writeBytesToColorCells(Mat& mat, const unsigned char* info, int len, const std::vector<CellPos>& cells)
+	{
+		int cellIndex = 0;
+		const int totalCells = len * 4;
 		for (const auto& cell : cells)
 		{
-			if (bitIndex >= totalBits)
+			if (cellIndex >= totalCells)
 			{
 				break;
 			}
-			const int byteIndex = bitIndex / 8;
-			const int offset = bitIndex % 8;
-			const bool bit = ((info[byteIndex] >> offset) & 1) != 0;
-			mat.at<Vec3b>(cell.row, cell.col) = pixel[bit ? White : Black];
-			++bitIndex;
+			const int byteIndex = cellIndex / 4;
+			const int shift = (cellIndex % 4) * 2;
+			const unsigned char twoBits = static_cast<unsigned char>((info[byteIndex] >> shift) & 0x03);
+			writePayloadColorCell(mat, cell.row, cell.col, twoBits);
+			++cellIndex;
+		}
+	}
+
+	const std::array<unsigned char, BytesPerFrame>& getScrambleMask()
+	{
+		static const std::array<unsigned char, BytesPerFrame> mask = []()
+		{
+			std::array<unsigned char, BytesPerFrame> values = {};
+			uint16_t lfsr = 0xACE1u;
+			for (int i = 0; i < BytesPerFrame; ++i)
+			{
+				unsigned char byte = 0;
+				for (int bit = 0; bit < 8; ++bit)
+				{
+					byte |= static_cast<unsigned char>(lfsr & 1u) << bit;
+					const uint16_t feedback = static_cast<uint16_t>((lfsr ^ (lfsr >> 2) ^ (lfsr >> 3) ^ (lfsr >> 5)) & 1u);
+					lfsr = static_cast<uint16_t>((lfsr >> 1) | (feedback << 15));
+				}
+				values[i] = byte;
+			}
+			return values;
+		}();
+		return mask;
+	}
+
+	void ScramblePayload(unsigned char* dst, const unsigned char* src, int len)
+	{
+		const auto& mask = getScrambleMask();
+		const int copyLen = std::min(len, BytesPerFrame);
+		for (int i = 0; i < copyLen; ++i)
+		{
+			dst[i] = static_cast<unsigned char>(src[i] ^ mask[i]);
+		}
+		for (int i = copyLen; i < BytesPerFrame; ++i)
+		{
+			dst[i] = 0;
+		}
+	}
+
+	void EncodePayloadWithEcc(unsigned char* dst, const unsigned char* src, int rawLen)
+	{
+		std::memset(dst, 0, EncodedPayloadBytesPerFrame);
+		const int encodeLen = std::min(rawLen, BytesPerFrame);
+		for (int group = 0; group < EccGroupCount; ++group)
+		{
+			const int srcBase = group * EccDataBytes;
+			const int dstBase = group * EccGroupBytes;
+			if (srcBase >= encodeLen || dstBase + EccGroupBytes > EncodedPayloadBytesPerFrame)
+			{
+				break;
+			}
+			unsigned char ecc0 = 0;
+			unsigned char ecc1 = 0;
+			for (int i = 0; i < EccDataBytes; ++i)
+			{
+				const unsigned char value = src[srcBase + i];
+				dst[dstBase + i] = value;
+				ecc0 ^= value;
+				ecc1 ^= static_cast<unsigned char>((i & 1) == 0 ? value : ((value << 1) | (value >> 7)));
+			}
+			dst[dstBase + EccDataBytes] = ecc0;
+			dst[dstBase + EccDataBytes + 1] = ecc1;
+		}
+	}
+
+	void PackFramePayload(unsigned char* encoded, const unsigned char* raw, int rawLen)
+	{
+		unsigned char scrambled[BytesPerFrame];
+		ScramblePayload(scrambled, raw, rawLen);
+		EncodePayloadWithEcc(encoded, scrambled, BytesPerFrame);
+	}
+
+	void BulidCalibrationStrip(Mat& mat)
+	{
+		for (int block = 0; block < 4; ++block)
+		{
+			const Vec3b& blockColor = pixel[payloadColorIndex[block]];
+			const int left = CalibrationLeft + block * CalibrationBlockWidth;
+			for (int row = CalibrationTop; row < CalibrationTop + CalibrationHeight; ++row)
+			{
+				for (int col = left; col < left + CalibrationBlockWidth; ++col)
+				{
+					mat.at<Vec3b>(row, col) = blockColor;
+				}
+			}
 		}
 	}
 
@@ -259,12 +394,12 @@ namespace Code
 	uint16_t CalCheckCode(const unsigned char* info, int len, bool isStart, bool isEnd, uint16_t frameBase)
 	{
 		uint16_t ans = 0;
-		const int cutlen = (len / 2) * 2;
+		const int cutlen = (EncodedPayloadBytesPerFrame / 2) * 2;
 		for (int i = 0; i < cutlen; i += 2)
 		{
 			ans ^= (static_cast<uint16_t>(info[i]) << 8) | info[i + 1];
 		}
-		if (len & 1)
+		if (EncodedPayloadBytesPerFrame & 1)
 		{
 			ans ^= static_cast<uint16_t>(info[cutlen]) << 8;
 		}
@@ -359,14 +494,6 @@ namespace Code
 #endif
 	}
 
-	void fillDataNoise(Mat& mat)
-	{
-		for (const auto& cell : getPayloadCells())
-		{
-			fillBinaryNoiseCell(mat.at<Vec3b>(cell.row, cell.col));
-		}
-	}
-
 	void BulidCheckCodeAndFrameNo(Mat& mat, uint16_t checkcode, uint16_t FrameNo)
 	{
 		writeHeaderField(mat, 1, checkcode);
@@ -379,7 +506,7 @@ namespace Code
 	void BulidInfoRect(Mat& mat, const char* info, int len, int areaID)
 	{
 		(void)areaID;
-		writeBytesToCells(mat, reinterpret_cast<const unsigned char*>(info), len, getPayloadCells());
+		writeBytesToColorCells(mat, reinterpret_cast<const unsigned char*>(info), len, getPayloadCells());
 #ifdef Code_DEBUG
 		Show_Scale_Img(mat);
 #endif
@@ -419,7 +546,7 @@ namespace Code
 		}
 		BulidSafeArea(codeMat);
 		BulidQrPoint(codeMat);
-		fillDataNoise(codeMat);
+		BulidCalibrationStrip(codeMat);
 
 		const int checkCode = CalCheckCode(reinterpret_cast<const unsigned char*>(info), tailLen,
 			frameType == FrameType::Start || frameType == FrameType::StartAndEnd,
@@ -428,7 +555,7 @@ namespace Code
 		BulidFrameFlag(codeMat, frameType, tailLen);
 		BulidCheckCodeAndFrameNo(codeMat, checkCode, FrameNo % 65536);
 
-		writeBytesToCells(codeMat, reinterpret_cast<const unsigned char*>(info), BytesPerFrame, getPayloadCells());
+		writeBytesToColorCells(codeMat, reinterpret_cast<const unsigned char*>(info), EncodedPayloadBytesPerFrame, getPayloadCells());
 		return codeMat;
 	}
 
@@ -441,19 +568,17 @@ namespace Code
 		}
 		if (len <= BytesPerFrame)
 		{
-			unsigned char BUF[BytesPerFrame + 5];
-			std::memcpy(BUF, info, sizeof(unsigned char) * len);
-			for (int i = len; i <= BytesPerFrame; ++i)
-			{
-				BUF[i] = std::rand() % 256;
-			}
+			unsigned char BUF[EncodedPayloadBytesPerFrame + 5];
+			PackFramePayload(BUF, reinterpret_cast<const unsigned char*>(info), len);
 			WriteFrameImage(CodeFrame(FrameType::StartAndEnd, reinterpret_cast<char*>(BUF), len, 0), savePath, outputFormat, counter++);
 		}
 		else
 		{
 			int i = 0;
 			len -= BytesPerFrame;
-			Mat output = CodeFrame(FrameType::Start, info, len, 0);
+			unsigned char BUF[EncodedPayloadBytesPerFrame + 5];
+			PackFramePayload(BUF, reinterpret_cast<const unsigned char*>(info), BytesPerFrame);
+			Mat output = CodeFrame(FrameType::Start, reinterpret_cast<char*>(BUF), len, 0);
 			--FrameCountLimit;
 			WriteFrameImage(output, savePath, outputFormat, counter++);
 
@@ -461,27 +586,13 @@ namespace Code
 			{
 				info += BytesPerFrame;
 				--FrameCountLimit;
-				if (len - BytesPerFrame > 0)
-				{
-					if (FrameCountLimit > 0)
-					{
-						output = CodeFrame(FrameType::Normal, info, BytesPerFrame, ++i);
-					}
-					else
-					{
-						output = CodeFrame(FrameType::End, info, BytesPerFrame, ++i);
-					}
-				}
-				else
-				{
-					unsigned char BUF[BytesPerFrame + 5];
-					std::memcpy(BUF, info, sizeof(unsigned char) * len);
-					for (int j = len; j <= BytesPerFrame; ++j)
-					{
-						BUF[j] = std::rand() % 256;
-					}
-					output = CodeFrame(FrameType::End, reinterpret_cast<char*>(BUF), len, ++i);
-				}
+				const bool hasMoreFullFrames = len - BytesPerFrame > 0;
+				const int currentLen = hasMoreFullFrames ? BytesPerFrame : len;
+				const FrameType frameType = hasMoreFullFrames ?
+					(FrameCountLimit > 0 ? FrameType::Normal : FrameType::End) :
+					FrameType::End;
+				PackFramePayload(BUF, reinterpret_cast<const unsigned char*>(info), currentLen);
+				output = CodeFrame(frameType, reinterpret_cast<char*>(BUF), currentLen, ++i);
 				len -= BytesPerFrame;
 				WriteFrameImage(output, savePath, outputFormat, counter++);
 			}
