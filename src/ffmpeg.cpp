@@ -1,15 +1,12 @@
-﻿#include "ffmpeg.h"
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
+#include "ffmpeg.h"
 #include <string>
+
+#define MAXBUFLEN 2048
 
 namespace FFMPEG
 {
-    constexpr int MAXBUFLEN = 2048;
-
     // 可由外部通过 SetFfmpegPath / SetTmpPath 注入，默认为相对目录
-    static std::string s_ffmpegPath = "./bin/"; // 请确保末尾带斜杠或由调用方设置正确
+    static std::string s_ffmpegPath = ".\\bin\\";
     static std::string s_tmpPath = "tmpdir";
 
     // 解耦入口：setter/getter
@@ -17,9 +14,8 @@ namespace FFMPEG
     {
         if (path && path[0]) {
             s_ffmpegPath = path;
-            // 末尾保证有斜杠
             if (s_ffmpegPath.back() != '/' && s_ffmpegPath.back() != '\\')
-                s_ffmpegPath.push_back('/');
+                s_ffmpegPath.push_back('\\');
         }
     }
     const char* GetFfmpegPath() { return s_ffmpegPath.c_str(); }
@@ -32,10 +28,10 @@ namespace FFMPEG
     }
     const char* GetTmpPath() { return s_tmpPath.c_str(); }
 
-    // 执行命令的封装：集中处理命令引号与日志重定向（便于单测/调试）
+    // 执行命令的封装
     static int ExecCommand(const char* cmd)
     {
-        // 这里保留原来的 system 调用，但统一入口，便于后续替换（如 popen）
+        printf("[EXEC] %s\n", cmd);
         return system(cmd);
     }
 
@@ -45,14 +41,13 @@ namespace FFMPEG
     {
         char BUF[MAXBUFLEN];
 
-        // 创建目录（带引号以支持包含空格的路径）
-        snprintf(BUF, MAXBUFLEN, "md \"%s\"", imagePath);
+        // 创建目录
+        snprintf(BUF, MAXBUFLEN, "mkdir ""%s"" 2>nul", imagePath);
         ExecCommand(BUF);
 
-        // 使用统一的 ffmpeg 路径拼接方式，整个可执行文件用引号包裹
-        // 保持原有逻辑：解码时启用多线程，禁用 vsync 自动重复/丢帧，保留 q:v 控制质量
+        // 构建 ffmpeg 命令
         snprintf(BUF, MAXBUFLEN,
-            "\"%sffmpeg.exe\" -y -i \"%s\" -threads 0 -vsync 0 -q:v 2 -f image2 \"%s\\%%05d.%s\"",
+            """%sffmpeg.exe"" -y -i ""%s"" -threads 0 -vsync 0 -q:v 2 -f image2 ""%s\\%%05d.%s""",
             GetFfmpegPath(), videoPath, imagePath, imageFormat);
 
         return ExecCommand(BUF);
@@ -67,20 +62,18 @@ namespace FFMPEG
     {
         char BUF[MAXBUFLEN];
 
-        // 使用 -framerate 指定输入帧率，使用快速 preset 与多线程，加上 yuv420p 保证解码兼容性
         if (kbps)
             snprintf(BUF, MAXBUFLEN,
-                "\"%sffmpeg.exe\" -y -framerate %u -f image2 -i \"%s\\%%05d.%s\" -c:v libx264 -preset ultrafast -b:v %uK -threads 0 -pix_fmt yuv420p -r %u \"%s\"",
+                """%sffmpeg.exe"" -y -framerate %u -f image2 -i ""%s\\%%05d.%s"" -c:v libx264 -preset ultrafast -b:v %uK -threads 0 -pix_fmt yuv420p -r %u ""%s""",
                 GetFfmpegPath(), rawFrameRates, imagePath, imageFormat, kbps, outputFrameRates, videoPath);
         else
             snprintf(BUF, MAXBUFLEN,
-                "\"%sffmpeg.exe\" -y -framerate %u -f image2 -i \"%s\\%%05d.%s\" -c:v libx264 -preset ultrafast -threads 0 -pix_fmt yuv420p -r %u \"%s\"",
+                """%sffmpeg.exe"" -y -framerate %u -f image2 -i ""%s\\%%05d.%s"" -c:v libx264 -preset ultrafast -threads 0 -pix_fmt yuv420p -r %u ""%s""",
                 GetFfmpegPath(), rawFrameRates, imagePath, imageFormat, outputFrameRates, videoPath);
 
         return ExecCommand(BUF);
     }
 
-    //缩放滤镜
     int ScaleImage(const char* inputPath,
                    const char* outputPath,
                    int width,
@@ -90,15 +83,14 @@ namespace FFMPEG
 
         char BUF[MAXBUFLEN];
         snprintf(BUF, MAXBUFLEN,
-            "\"%sffmpeg.exe\" -y -i \"%s\" -vf \"scale=%d:%d\" \"%s\"",
-            GetFfmpegPath(), inputPath, width, height, outputPath);
+            """%sffmpeg.exe"" -y -i ""%s"" -vf ""scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2"" -frames:v 1 -update 1 ""%s""",
+            GetFfmpegPath(), inputPath, width, height, width, height, outputPath);
 
         return ExecCommand(BUF);
     }
 
     int test(void)
     {
-        // 保持原有逻辑，使用返回码判断（0 成功）
         const char* tmp = GetTmpPath();
         int rc = VideotoImage("test.mp4", tmp, "png");
         if (rc != 0) {
