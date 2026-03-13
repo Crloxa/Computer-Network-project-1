@@ -30,17 +30,17 @@ namespace Code
 	constexpr int SmallQrPointbias = 7;
 	constexpr int SmallQrPointRadius = 3;
 	constexpr int CornerReserveSize = 21;
-	constexpr int HeaderHeight = 18;
-	constexpr int HeaderWidth = 48;
+	constexpr int HeaderHeight = 3;
+	constexpr int HeaderWidth = 16;
 	constexpr int HeaderLeft = 21;
 	constexpr int HeaderTop = 3;
-	constexpr int HeaderFieldHeight = 6;
+	constexpr int HeaderFieldHeight = 1;
 	constexpr int HeaderFieldBits = 16;
-	constexpr int HeaderBitWidth = 3;
+	constexpr int HeaderBitWidth = 1;
 	constexpr int HeaderInnerLeft = 0;
 	constexpr int TopDataLeft = HeaderLeft + HeaderWidth;
-	constexpr int TopDataWidth = 43;
-	constexpr int DataAreaCount = 4;
+	constexpr int TopDataWidth = 75;
+	constexpr int DataAreaCount = 5;
 	constexpr int PaddingCellCount = 4;
 
 	struct DataArea
@@ -90,19 +90,21 @@ namespace Code
 
 	const std::array<DataArea, DataAreaCount> kDataAreas =
 	{{
-		{3, 69, 18, 43, 0},
+		{3, TopDataLeft, 3, TopDataWidth, 0},
+		{6, 21, 15, 91, 0},
 		{21, 3, 88, 127, 0},
 		{109, 3, 3, 127, 0},
 		{112, 21, 18, 91, 0}
 	}};
 
-	const std::array<DebugRegion, 9> kDebugRegions =
+	const std::array<DebugRegion, 10> kDebugRegions =
 	{{
 		{"header", HeaderTop, HeaderLeft, HeaderHeight, HeaderWidth, Vec3b(0, 0, 255)},
 		{"data1", kDataAreas[0].top, kDataAreas[0].left, kDataAreas[0].height, kDataAreas[0].width, Vec3b(255, 0, 0)},
-		{"data2", kDataAreas[1].top, kDataAreas[1].left, kDataAreas[1].height, kDataAreas[1].width, Vec3b(0, 255, 0)},
-		{"data4", kDataAreas[2].top, kDataAreas[2].left, kDataAreas[2].height, kDataAreas[2].width, Vec3b(0, 255, 255)},
-		{"data3", kDataAreas[3].top, kDataAreas[3].left, kDataAreas[3].height, kDataAreas[3].width, Vec3b(255, 255, 0)},
+		{"data1_lower", kDataAreas[1].top, kDataAreas[1].left, kDataAreas[1].height, kDataAreas[1].width, Vec3b(255, 0, 0)},
+		{"data2", kDataAreas[2].top, kDataAreas[2].left, kDataAreas[2].height, kDataAreas[2].width, Vec3b(0, 255, 0)},
+		{"data4", kDataAreas[3].top, kDataAreas[3].left, kDataAreas[3].height, kDataAreas[3].width, Vec3b(0, 255, 255)},
+		{"data3", kDataAreas[4].top, kDataAreas[4].left, kDataAreas[4].height, kDataAreas[4].width, Vec3b(255, 255, 0)},
 		{"corner_data_v", 112, 112, 18, 9, Vec3b(0, 200, 255)},
 		{"corner_data_h", 112, 121, 9, 9, Vec3b(0, 200, 255)},
 		{"corner", FrameSize - CornerReserveSize, FrameSize - CornerReserveSize, CornerReserveSize, CornerReserveSize, Vec3b(255, 0, 255)},
