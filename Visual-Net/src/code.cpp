@@ -10,6 +10,8 @@
 
 // 定义下面这个宏来开启编码端调试图显示。
 //#define Code_DEBUG
+// 定义下面这个宏来额外输出彩色分区边界预览图。
+//#define Layout_DEBUG
 #define Show_Scale_Img(src) do\
 {\
 	Mat temp = ScaleToDisSize(src);\
@@ -29,17 +31,15 @@ namespace Code
 	constexpr int SmallQrPointRadius = 3;
 	constexpr int CornerReserveSize = 21;
 	constexpr int HeaderHeight = 18;
-	constexpr int HeaderWidth = 56;
+	constexpr int HeaderWidth = 48;
 	constexpr int HeaderLeft = 21;
 	constexpr int HeaderTop = 3;
 	constexpr int HeaderFieldHeight = 6;
 	constexpr int HeaderFieldBits = 16;
 	constexpr int HeaderBitWidth = 3;
-	constexpr int HeaderInnerLeft = 4;
-	constexpr int TopDataLeft = 77;
-	constexpr int TopDataWidth = 32;
-	constexpr int TopReservedLeft = 109;
-	constexpr int TopReservedRight = 111;
+	constexpr int HeaderInnerLeft = 0;
+	constexpr int TopDataLeft = HeaderLeft + HeaderWidth;
+	constexpr int TopDataWidth = 35;
 	constexpr int DataAreaCount = 4;
 
 	struct DataArea
@@ -55,6 +55,16 @@ namespace Code
 	{
 		int row;
 		int col;
+	};
+
+	struct DebugRegion
+	{
+		const char* name;
+		int top;
+		int left;
+		int height;
+		int width;
+		Vec3b color;
 	};
 
 	enum color
@@ -79,10 +89,21 @@ namespace Code
 
 	const std::array<DataArea, DataAreaCount> kDataAreas =
 	{{
-		{3, 77, 18, 32, 0},
+		{3, 77, 18, 35, 0},
 		{21, 3, 88, 127, 0},
 		{109, 3, 3, 127, 0},
 		{112, 21, 18, 91, 0}
+	}};
+
+	const std::array<DebugRegion, 7> kDebugRegions =
+	{{
+		{"header", HeaderTop, HeaderLeft, HeaderHeight, HeaderWidth, Vec3b(0, 0, 255)},
+		{"data1", kDataAreas[0].top, kDataAreas[0].left, kDataAreas[0].height, kDataAreas[0].width, Vec3b(255, 0, 0)},
+		{"data2", kDataAreas[1].top, kDataAreas[1].left, kDataAreas[1].height, kDataAreas[1].width, Vec3b(0, 255, 0)},
+		{"data4", kDataAreas[2].top, kDataAreas[2].left, kDataAreas[2].height, kDataAreas[2].width, Vec3b(0, 255, 255)},
+		{"data3", kDataAreas[3].top, kDataAreas[3].left, kDataAreas[3].height, kDataAreas[3].width, Vec3b(255, 255, 0)},
+		{"corner", FrameSize - CornerReserveSize, FrameSize - CornerReserveSize, CornerReserveSize, CornerReserveSize, Vec3b(255, 0, 255)},
+		{"small_qr", FrameSize - SmallQrPointbias - SmallQrPointRadius, FrameSize - SmallQrPointbias - SmallQrPointRadius, SmallQrPointRadius * 2 + 1, SmallQrPointRadius * 2 + 1, Vec3b(0, 128, 255)}
 	}};
 
 	bool isInsideSmallQrPoint(int row, int col)
@@ -113,6 +134,27 @@ namespace Code
 			}
 		}
 		return cells;
+	}
+
+	std::vector<CellPos> buildMergedDataCells()
+	{
+		std::vector<CellPos> cells;
+		for (const auto& area : kDataAreas)
+		{
+			const auto areaCells = buildAreaCells(area);
+			cells.insert(cells.end(), areaCells.begin(), areaCells.end());
+		}
+		if (!cells.empty())
+		{
+			cells.pop_back();
+		}
+		return cells;
+	}
+
+	CellPos getPaddingCell()
+	{
+		const auto lastAreaCells = buildAreaCells(kDataAreas.back());
+		return lastAreaCells.back();
 	}
 
 	void fillAreaNoise(Mat& mat, const DataArea& area)
@@ -162,6 +204,32 @@ namespace Code
 		}
 	}
 
+	void drawRegionOutline(Mat& mat, const DebugRegion& region)
+	{
+		const int bottom = region.top + region.height - 1;
+		const int right = region.left + region.width - 1;
+		for (int col = region.left; col <= right; ++col)
+		{
+			mat.at<Vec3b>(region.top, col) = region.color;
+			mat.at<Vec3b>(bottom, col) = region.color;
+		}
+		for (int row = region.top; row <= bottom; ++row)
+		{
+			mat.at<Vec3b>(row, region.left) = region.color;
+			mat.at<Vec3b>(row, right) = region.color;
+		}
+	}
+
+	Mat BuildLayoutPreview(const Mat& src)
+	{
+		Mat preview = src.clone();
+		for (const auto& region : kDebugRegions)
+		{
+			drawRegionOutline(preview, region);
+		}
+		return preview;
+	}
+
 	Mat ScaleToDisSize(const Mat& src)
 	{
 		Mat dis(FrameOutputSize, FrameOutputSize, CV_8UC3);
@@ -173,6 +241,19 @@ namespace Code
 			}
 		}
 		return dis;
+	}
+
+	void WriteFrameImage(const Mat& logicalFrame, const char* savePath, const char* outputFormat, int frameIndex)
+	{
+		char fileName[128];
+		const Mat output = ScaleToDisSize(logicalFrame);
+		std::snprintf(fileName, sizeof(fileName), "%s\\%05d.%s", savePath, frameIndex, outputFormat);
+		imwrite(fileName, output);
+#ifdef Layout_DEBUG
+		const Mat layoutPreview = ScaleToDisSize(BuildLayoutPreview(logicalFrame));
+		std::snprintf(fileName, sizeof(fileName), "%s\\%05d_layout.%s", savePath, frameIndex, outputFormat);
+		imwrite(fileName, layoutPreview);
+#endif
 	}
 
 	uint16_t CalCheckCode(const unsigned char* info, int len, bool isStart, bool isEnd, uint16_t frameBase)
@@ -273,13 +354,6 @@ namespace Code
 		}
 		fillCornerNoiseArea(mat);
 		drawSmallQrPoint(mat);
-		for (int row = HeaderTop; row < HeaderTop + HeaderHeight; ++row)
-		{
-			for (int col = TopReservedLeft; col <= TopReservedRight; ++col)
-			{
-				mat.at<Vec3b>(row, col) = pixel[White];
-			}
-		}
 #ifdef Code_DEBUG
 		Show_Scale_Img(mat);
 #endif
@@ -291,6 +365,8 @@ namespace Code
 		{
 			fillAreaNoise(mat, area);
 		}
+		const CellPos paddingCell = getPaddingCell();
+		mat.at<Vec3b>(paddingCell.row, paddingCell.col) = pixel[White];
 	}
 
 	void BulidCheckCodeAndFrameNo(Mat& mat, uint16_t checkcode, uint16_t FrameNo)
@@ -354,21 +430,13 @@ namespace Code
 		BulidFrameFlag(codeMat, frameType, tailLen);
 		BulidCheckCodeAndFrameNo(codeMat, checkCode, FrameNo % 65536);
 
-		int bytesToWrite = BytesPerFrame;
-		for (int i = 0; i < DataAreaCount && bytesToWrite > 0; ++i)
-		{
-			const int lennow = std::min(bytesToWrite, static_cast<int>(buildAreaCells(kDataAreas[i]).size() / 8));
-			BulidInfoRect(codeMat, info, lennow, i);
-			bytesToWrite -= lennow;
-			info += lennow;
-		}
+		const auto mergedCells = buildMergedDataCells();
+		writeBytesToCells(codeMat, reinterpret_cast<const unsigned char*>(info), BytesPerFrame, mergedCells);
 		return codeMat;
 	}
 
 	void Main(const char* info, int len, const char* savePath, const char* outputFormat, int FrameCountLimit)
 	{
-		Mat output;
-		char fileName[128];
 		int counter = 0;
 		if (FrameCountLimit == 0 || len <= 0)
 		{
@@ -382,19 +450,15 @@ namespace Code
 			{
 				BUF[i] = std::rand() % 256;
 			}
-			output = ScaleToDisSize(CodeFrame(FrameType::StartAndEnd, reinterpret_cast<char*>(BUF), len, 0));
-			std::snprintf(fileName, sizeof(fileName), "%s\\%05d.%s", savePath, counter++, outputFormat);
-			imwrite(fileName, output);
+			WriteFrameImage(CodeFrame(FrameType::StartAndEnd, reinterpret_cast<char*>(BUF), len, 0), savePath, outputFormat, counter++);
 		}
 		else
 		{
 			int i = 0;
 			len -= BytesPerFrame;
-			output = ScaleToDisSize(CodeFrame(FrameType::Start, info, len, 0));
+			Mat output = CodeFrame(FrameType::Start, info, len, 0);
 			--FrameCountLimit;
-
-			std::snprintf(fileName, sizeof(fileName), "%s\\%05d.%s", savePath, counter++, outputFormat);
-			imwrite(fileName, output);
+			WriteFrameImage(output, savePath, outputFormat, counter++);
 
 			while (len > 0 && FrameCountLimit > 0)
 			{
@@ -404,11 +468,11 @@ namespace Code
 				{
 					if (FrameCountLimit > 0)
 					{
-						output = ScaleToDisSize(CodeFrame(FrameType::Normal, info, BytesPerFrame, ++i));
+						output = CodeFrame(FrameType::Normal, info, BytesPerFrame, ++i);
 					}
 					else
 					{
-						output = ScaleToDisSize(CodeFrame(FrameType::End, info, BytesPerFrame, ++i));
+						output = CodeFrame(FrameType::End, info, BytesPerFrame, ++i);
 					}
 				}
 				else
@@ -419,11 +483,10 @@ namespace Code
 					{
 						BUF[j] = std::rand() % 256;
 					}
-					output = ScaleToDisSize(CodeFrame(FrameType::End, reinterpret_cast<char*>(BUF), len, ++i));
+					output = CodeFrame(FrameType::End, reinterpret_cast<char*>(BUF), len, ++i);
 				}
 				len -= BytesPerFrame;
-				std::snprintf(fileName, sizeof(fileName), "%s\\%05d.%s", savePath, counter++, outputFormat);
-				imwrite(fileName, output);
+				WriteFrameImage(output, savePath, outputFormat, counter++);
 			}
 		}
 	}
