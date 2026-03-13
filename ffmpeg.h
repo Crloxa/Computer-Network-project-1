@@ -26,4 +26,7 @@ namespace FFMPEG
 
 	void SetTmpPath(const char* path);
 	const char* GetTmpPath();
+
+	int ScaleImage(const char* inputPath, const char* outputPath, int width, int height);
 }
+
