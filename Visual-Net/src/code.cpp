@@ -21,11 +21,11 @@
 
 namespace Code
 {
-	constexpr int BytesPerFrame = 1878;
-	constexpr int FrameSize = 133;
+	constexpr int BytesPerFrame = 2240;
+	constexpr int FrameSize = 144;
 	constexpr int FrameOutputRate = 10;
 	constexpr int FrameOutputSize = FrameSize * FrameOutputRate;
-	constexpr int SafeAreaWidth = 2;
+	constexpr int SafeAreaWidth = 3;
 	constexpr int QrPointSize = 21;
 	constexpr int SmallQrPointbias = 7;
 	constexpr int SmallQrPointRadius = 3;
@@ -38,19 +38,8 @@ namespace Code
 	constexpr int HeaderFieldBits = 16;
 	constexpr int HeaderBitWidth = 1;
 	constexpr int HeaderInnerLeft = 0;
-	constexpr int TopDataLeft = HeaderLeft + HeaderWidth;
-	constexpr int TopDataWidth = 75;
-	constexpr int DataAreaCount = 5;
-	constexpr int PaddingCellCount = 4;
-
-	struct DataArea
-	{
-		int top;
-		int left;
-		int height;
-		int width;
-		int trimRight;
-	};
+	constexpr int PayloadBitCount = BytesPerFrame * 8;
+	constexpr int SmallQrSafetyWidth = 3;
 
 	struct CellPos
 	{
@@ -88,25 +77,13 @@ namespace Code
 		Vec3b(255, 0, 0), Vec3b(255, 0, 255), Vec3b(255, 255, 0), Vec3b(255, 255, 255)
 	};
 
-	const std::array<DataArea, DataAreaCount> kDataAreas =
-	{{
-		{3, TopDataLeft, 3, TopDataWidth, 0},
-		{6, 21, 15, 91, 0},
-		{21, 3, 88, 127, 0},
-		{109, 3, 3, 127, 0},
-		{112, 21, 18, 91, 0}
-	}};
-
-	const std::array<DebugRegion, 10> kDebugRegions =
+	const std::array<DebugRegion, 7> kDebugRegions =
 	{{
 		{"header", HeaderTop, HeaderLeft, HeaderHeight, HeaderWidth, Vec3b(0, 0, 255)},
-		{"data1", kDataAreas[0].top, kDataAreas[0].left, kDataAreas[0].height, kDataAreas[0].width, Vec3b(255, 0, 0)},
-		{"data1_lower", kDataAreas[1].top, kDataAreas[1].left, kDataAreas[1].height, kDataAreas[1].width, Vec3b(255, 0, 0)},
-		{"data2", kDataAreas[2].top, kDataAreas[2].left, kDataAreas[2].height, kDataAreas[2].width, Vec3b(0, 255, 0)},
-		{"data4", kDataAreas[3].top, kDataAreas[3].left, kDataAreas[3].height, kDataAreas[3].width, Vec3b(0, 255, 255)},
-		{"data3", kDataAreas[4].top, kDataAreas[4].left, kDataAreas[4].height, kDataAreas[4].width, Vec3b(255, 255, 0)},
-		{"corner_data_v", 112, 112, 18, 9, Vec3b(0, 200, 255)},
-		{"corner_data_h", 112, 121, 9, 9, Vec3b(0, 200, 255)},
+		{"qr_top_left", 0, 0, QrPointSize, QrPointSize, Vec3b(255, 0, 0)},
+		{"qr_top_right", 0, FrameSize - QrPointSize, QrPointSize, QrPointSize, Vec3b(0, 255, 0)},
+		{"qr_bottom_left", FrameSize - QrPointSize, 0, QrPointSize, QrPointSize, Vec3b(0, 255, 255)},
+		{"payload", SafeAreaWidth, SafeAreaWidth, FrameSize - SafeAreaWidth * 2, FrameSize - SafeAreaWidth * 2, Vec3b(255, 255, 0)},
 		{"corner", FrameSize - CornerReserveSize, FrameSize - CornerReserveSize, CornerReserveSize, CornerReserveSize, Vec3b(255, 0, 255)},
 		{"small_qr", FrameSize - SmallQrPointbias - SmallQrPointRadius, FrameSize - SmallQrPointbias - SmallQrPointRadius, SmallQrPointRadius * 2 + 1, SmallQrPointRadius * 2 + 1, Vec3b(0, 128, 255)}
 	}};
@@ -119,13 +96,46 @@ namespace Code
 
 	bool isInsideCornerQuietZone(int row, int col)
 	{
-		return row >= 130 || col >= 130;
+		return row >= FrameSize - SafeAreaWidth || col >= FrameSize - SafeAreaWidth;
 	}
 
 	bool isInsideCornerSafetyZone(int row, int col)
 	{
 		const int center = FrameSize - SmallQrPointbias;
-		return std::abs(row - center) <= SmallQrPointRadius + 2 && std::abs(col - center) <= SmallQrPointRadius + 2;
+		return std::abs(row - center) <= SmallQrPointRadius + SmallQrSafetyWidth &&
+			std::abs(col - center) <= SmallQrPointRadius + SmallQrSafetyWidth;
+	}
+
+	bool isInsideSafeArea(int row, int col)
+	{
+		return row < SafeAreaWidth || col < SafeAreaWidth ||
+			row >= FrameSize - SafeAreaWidth || col >= FrameSize - SafeAreaWidth;
+	}
+
+	bool isInsideMainQrPoint(int row, int col)
+	{
+		return (row < QrPointSize && col < QrPointSize) ||
+			(row < QrPointSize && col >= FrameSize - QrPointSize) ||
+			(row >= FrameSize - QrPointSize && col < QrPointSize);
+	}
+
+	bool isInsideHeader(int row, int col)
+	{
+		return row >= HeaderTop && row < HeaderTop + HeaderHeight &&
+			col >= HeaderLeft && col < HeaderLeft + HeaderWidth;
+	}
+
+	bool isReservedCell(int row, int col)
+	{
+		if (isInsideSafeArea(row, col) || isInsideMainQrPoint(row, col) || isInsideHeader(row, col))
+		{
+			return true;
+		}
+		if (row >= FrameSize - CornerReserveSize && col >= FrameSize - CornerReserveSize)
+		{
+			return isInsideSmallQrPoint(row, col) || isInsideCornerSafetyZone(row, col);
+		}
+		return false;
 	}
 
 	void fillBinaryNoiseCell(Vec3b& cell)
@@ -133,84 +143,30 @@ namespace Code
 		cell = pixel[(std::rand() & 1) ? White : Black];
 	}
 
-	std::vector<CellPos> buildAreaCells(const DataArea& area)
+	const std::vector<CellPos>& getPayloadCells()
 	{
-		std::vector<CellPos> cells;
-		for (int row = area.top; row < area.top + area.height; ++row)
+		static const std::vector<CellPos> cells = []()
 		{
-			const int rowWidth = area.width - area.trimRight;
-			for (int col = area.left; col < area.left + rowWidth; ++col)
+			std::vector<CellPos> payloadCells;
+			payloadCells.reserve(FrameSize * FrameSize);
+			for (int row = 0; row < FrameSize; ++row)
 			{
-				cells.push_back({ row, col });
-			}
-		}
-		return cells;
-	}
-
-	std::vector<CellPos> buildCornerDataCells()
-	{
-		std::vector<CellPos> cells;
-		for (int row = FrameSize - CornerReserveSize; row < FrameSize; ++row)
-		{
-			for (int col = FrameSize - CornerReserveSize; col < FrameSize; ++col)
-			{
-				if (isInsideCornerQuietZone(row, col))
+				for (int col = 0; col < FrameSize; ++col)
 				{
-					continue;
+					if (!isReservedCell(row, col))
+					{
+						payloadCells.push_back({ row, col });
+					}
 				}
-				if (isInsideCornerSafetyZone(row, col))
-				{
-					continue;
-				}
-				cells.push_back({ row, col });
 			}
-		}
-		return cells;
-	}
-
-	std::vector<CellPos> buildFullDataCells()
-	{
-		std::vector<CellPos> cells;
-		for (const auto& area : kDataAreas)
-		{
-			const auto areaCells = buildAreaCells(area);
-			cells.insert(cells.end(), areaCells.begin(), areaCells.end());
-		}
-		const auto cornerCells = buildCornerDataCells();
-		cells.insert(cells.end(), cornerCells.begin(), cornerCells.end());
-		return cells;
-	}
-
-	std::vector<CellPos> buildMergedDataCells()
-	{
-		auto cells = buildFullDataCells();
-		if (cells.size() > PaddingCellCount)
-		{
-			cells.resize(cells.size() - PaddingCellCount);
-		}
-		return cells;
-	}
-
-	std::vector<CellPos> getPaddingCells()
-	{
-		const auto cells = buildFullDataCells();
-		if (cells.size() <= PaddingCellCount)
-		{
-			return {};
-		}
-		return std::vector<CellPos>(cells.end() - PaddingCellCount, cells.end());
-	}
-
-	void fillAreaNoise(Mat& mat, const DataArea& area)
-	{
-		for (int row = area.top; row < area.top + area.height; ++row)
-		{
-			const int rowWidth = area.width - area.trimRight;
-			for (int col = area.left; col < area.left + rowWidth; ++col)
+			if (payloadCells.size() < PayloadBitCount)
 			{
-				fillBinaryNoiseCell(mat.at<Vec3b>(row, col));
+				std::abort();
 			}
-		}
+			payloadCells.resize(PayloadBitCount);
+			return payloadCells;
+		}();
+		return cells;
 	}
 
 	void writeBytesToCells(Mat& mat, const unsigned char* info, int len, const std::vector<CellPos>& cells)
@@ -405,14 +361,9 @@ namespace Code
 
 	void fillDataNoise(Mat& mat)
 	{
-		const auto mergedCells = buildMergedDataCells();
-		for (const auto& cell : mergedCells)
+		for (const auto& cell : getPayloadCells())
 		{
 			fillBinaryNoiseCell(mat.at<Vec3b>(cell.row, cell.col));
-		}
-		for (const auto& cell : getPaddingCells())
-		{
-			mat.at<Vec3b>(cell.row, cell.col) = pixel[White];
 		}
 	}
 
@@ -427,8 +378,8 @@ namespace Code
 
 	void BulidInfoRect(Mat& mat, const char* info, int len, int areaID)
 	{
-		const auto cells = buildAreaCells(kDataAreas[areaID]);
-		writeBytesToCells(mat, reinterpret_cast<const unsigned char*>(info), len, cells);
+		(void)areaID;
+		writeBytesToCells(mat, reinterpret_cast<const unsigned char*>(info), len, getPayloadCells());
 #ifdef Code_DEBUG
 		Show_Scale_Img(mat);
 #endif
@@ -477,8 +428,7 @@ namespace Code
 		BulidFrameFlag(codeMat, frameType, tailLen);
 		BulidCheckCodeAndFrameNo(codeMat, checkCode, FrameNo % 65536);
 
-		const auto mergedCells = buildMergedDataCells();
-		writeBytesToCells(codeMat, reinterpret_cast<const unsigned char*>(info), BytesPerFrame, mergedCells);
+		writeBytesToCells(codeMat, reinterpret_cast<const unsigned char*>(info), BytesPerFrame, getPayloadCells());
 		return codeMat;
 	}
 
