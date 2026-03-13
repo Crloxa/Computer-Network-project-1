@@ -80,6 +80,22 @@ namespace FFMPEG
         return ExecCommand(BUF);
     }
 
+    //缩放滤镜
+    int ScaleImage(const char* inputPath,
+                   const char* outputPath,
+                   int width,
+                   int height)
+    {
+        if (!inputPath || !outputPath) return -1;
+
+        char BUF[MAXBUFLEN];
+        snprintf(BUF, MAXBUFLEN,
+            "\"%sffmpeg.exe\" -y -i \"%s\" -vf \"scale=%d:%d\" \"%s\"",
+            GetFfmpegPath(), inputPath, width, height, outputPath);
+
+        return ExecCommand(BUF);
+    }
+
     int test(void)
     {
         // 保持原有逻辑，使用返回码判断（0 成功）
