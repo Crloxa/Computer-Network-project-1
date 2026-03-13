@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="2200" height="1500" viewBox="0 0 2200 1500">
+  <defs>
+    <style>
+      .title { font: 700 30px "Microsoft YaHei UI", "Microsoft YaHei", sans-serif; fill: #111; }
+      .subtitle { font: 700 18px "Microsoft YaHei UI", "Microsoft YaHei", sans-serif; fill: #555; }
+      .label { font: 700 16px "Microsoft YaHei UI", "Microsoft YaHei", sans-serif; fill: #111; }
+      .text { font: 14px "Microsoft YaHei UI", "Microsoft YaHei", sans-serif; fill: #111; }
+      .small { font: 12px "Microsoft YaHei UI", "Microsoft YaHei", sans-serif; fill: #111; }
+      .muted { font: 13px "Microsoft YaHei UI", "Microsoft YaHei", sans-serif; fill: #444; }
+      .box { fill: #fafafa; stroke: #b8b8b8; stroke-width: 1.5; rx: 10; }
+      .arrow { stroke: #555; stroke-width: 2; fill: none; marker-end: url(#arrowhead); }
+    </style>
+    <marker id="arrowhead" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <polygon points="0,0 8,4 0,8" fill="#555"/>
+    </marker>
+  </defs>
+
+  <rect width="2200" height="1500" fill="#ffffff"/>
+
+  <text x="70" y="48" class="title">protocol_v1 中文布局示意</text>
+  <text x="70" y="82" class="subtitle">V1.7-133-4F | 逻辑网格 133x133 | module_px = 8 | 单帧上限 2127 bytes</text>
+
+  <!-- 左侧主图区域 -->
+  <g transform="translate(70,110)">
+    <rect x="0" y="0" width="1128" height="1128" fill="#f2f2f2" stroke="#111" stroke-width="2"/>
+    <rect x="32" y="32" width="1064" height="1064" fill="#eef6ff" stroke="#999" stroke-width="1.5"/>
+
+    <!-- payload 棋盘底纹 -->
+    <g fill="#ffffff" opacity="0.95">
+      <rect x="32" y="32" width="1064" height="1064"/>
+      <g fill="#f7fbff">
+        <rect x="32" y="32" width="1064" height="1064"/>
+      </g>
+      <g fill="#ffffff" opacity="0.88">
+        <rect x="32" y="32" width="1064" height="1064"/>
+        <path d="M32 40 h1064 M32 56 h1064 M32 72 h1064 M32 88 h1064 M32 104 h1064 M32 120 h1064 M32 136 h1064 M32 152 h1064 M32 168 h1064 M32 184 h1064 M32 200 h1064 M32 216 h1064 M32 232 h1064 M32 248 h1064 M32 264 h1064 M32 280 h1064 M32 296 h1064 M32 312 h1064 M32 328 h1064 M32 344 h1064 M32 360 h1064 M32 376 h1064 M32 392 h1064 M32 408 h1064 M32 424 h1064 M32 440 h1064 M32 456 h1064 M32 472 h1064 M32 488 h1064 M32 504 h1064 M32 520 h1064 M32 536 h1064 M32 552 h1064 M32 568 h1064 M32 584 h1064 M32 600 h1064 M32 616 h1064 M32 632 h1064 M32 648 h1064 M32 664 h1064 M32 680 h1064 M32 696 h1064 M32 712 h1064 M32 728 h1064 M32 744 h1064 M32 760 h1064 M32 776 h1064 M32 792 h1064 M32 808 h1064 M32 824 h1064 M32 840 h1064 M32 856 h1064 M32 872 h1064 M32 888 h1064 M32 904 h1064 M32 920 h1064 M32 936 h1064 M32 952 h1064 M32 968 h1064 M32 984 h1064 M32 1000 h1064 M32 1016 h1064 M32 1032 h1064 M32 1048 h1064 M32 1064 h1064 M32 1080 h1064" stroke="#edf5fb" stroke-width="8"/>
+      </g>
+    </g>
+
+    <!-- 三个主定位器 -->
+    <rect x="32" y="32" width="80" height="80" fill="#ffe5e5" stroke="#c8143c" stroke-width="4"/>
+    <rect x="1016" y="32" width="80" height="80" fill="#ffe5e5" stroke="#c8143c" stroke-width="4"/>
+    <rect x="32" y="1016" width="80" height="80" fill="#ffe5e5" stroke="#c8143c" stroke-width="4"/>
+
+    <!-- 9x9 finder actual -->
+    <g>
+      <rect x="32" y="32" width="72" height="72" fill="#fff" stroke="#111" stroke-width="1"/>
+      <rect x="32" y="32" width="72" height="72" fill="none" stroke="#000" stroke-width="8"/>
+      <rect x="48" y="48" width="40" height="40" fill="#fff" stroke="#000" stroke-width="8"/>
+      <rect x="56" y="56" width="24" height="24" fill="#000"/>
+    </g>
+    <g>
+      <rect x="1024" y="32" width="72" height="72" fill="#fff" stroke="#111" stroke-width="1"/>
+      <rect x="1024" y="32" width="72" height="72" fill="none" stroke="#000" stroke-width="8"/>
+      <rect x="1040" y="48" width="40" height="40" fill="#fff" stroke="#000" stroke-width="8"/>
+      <rect x="1048" y="56" width="24" height="24" fill="#000"/>
+    </g>
+    <g>
+      <rect x="32" y="1024" width="72" height="72" fill="#fff" stroke="#111" stroke-width="1"/>
+      <rect x="32" y="1024" width="72" height="72" fill="none" stroke="#000" stroke-width="8"/>
+      <rect x="48" y="1040" width="40" height="40" fill="#fff" stroke="#000" stroke-width="8"/>
+      <rect x="56" y="1048" width="24" height="24" fill="#000"/>
+    </g>
+    <!-- header -->
+    <rect x="112" y="112" width="160" height="24" fill="#ffe7cc" stroke="#ff8c00" stroke-width="4"/>
+    <rect x="112" y="112" width="32" height="8" fill="#000"/>
+    <rect x="144" y="112" width="48" height="8" fill="#555"/>
+    <rect x="192" y="112" width="80" height="8" fill="#fff"/>
+    <rect x="112" y="120" width="64" height="8" fill="#000"/>
+    <rect x="176" y="120" width="96" height="8" fill="#fff"/>
+    <rect x="112" y="128" width="48" height="8" fill="#000"/>
+    <rect x="160" y="128" width="112" height="8" fill="#fff"/>
+
+    <!-- timing -->
+    <rect x="112" y="272" width="904" height="8" fill="#dff0ff" stroke="#1e90ff" stroke-width="2"/>
+    <rect x="272" y="112" width="8" height="904" fill="#dff0ff" stroke="#1e90ff" stroke-width="2"/>
+    <g stroke="#000" stroke-width="8">
+      <line x1="112" y1="276" x2="1016" y2="276" stroke-dasharray="8 8"/>
+      <line x1="276" y1="112" x2="276" y2="1016" stroke-dasharray="8 8"/>
+    </g>
+
+    <!-- 右下辅助定位块 reserve + actual -->
+    <rect x="888" y="888" width="72" height="72" fill="#dffafa" stroke="#009999" stroke-width="4"/>
+    <rect x="904" y="904" width="40" height="40" fill="none" stroke="#000" stroke-width="8"/>
+    <rect x="912" y="912" width="24" height="24" fill="#000"/>
+
+    <!-- local labels -->
+    <text x="14" y="18" class="small">外侧静区：每边 4 modules（32 px）</text>
+    <text x="146" y="105" class="small">头部 20x3</text>
+    <text x="760" y="880" class="small">右下辅助定位：实际 7x7，保留区 9x9</text>
+    <text x="250" y="1088" class="small">Payload 区：除保留区外全部可写</text>
+  </g>
+
+  <!-- 右侧说明框 -->
+  <g transform="translate(1260,120)">
+    <rect class="box" x="0" y="0" width="820" height="162"/>
+    <text x="16" y="28" class="label">1. 主定位器 + 右下辅助定位</text>
+    <text x="16" y="58" class="text">Visual-Net 不是四角等价定位器，而是左上 / 右上 / 左下三个主定位器。</text>
+    <text x="16" y="82" class="text">右下另外放一个较小的辅助定位点，用来补右下角的几何约束。</text>
+    <text x="16" y="106" class="text">当前这版 protocol_v1 参考这个思路：保留三个主定位器，再加一个右下辅助定位块。</text>
+    <text x="16" y="130" class="text">主定位器坐标：LT / RT / LB 各占 10x10 保留块。</text>
+
+    <rect class="box" x="0" y="180" width="820" height="174"/>
+    <text x="16" y="208" class="label">2. 帧头信息（Header）</text>
+    <text x="16" y="238" class="text">位置：x=10..29, y=10..12，共 20x3 = 60 bits。</text>
+    <text x="16" y="262" class="text">第 1 行：frame_type + tail_len_bytes + 保留位。</text>
+    <text x="16" y="286" class="text">第 2 行：checkcode16 + 保留位。</text>
+    <text x="16" y="310" class="text">第 3 行：frame_seq + 保留位。</text>
+    <text x="16" y="334" class="text">这版参考 Visual-Net 的“局部帧头”思路，尽量把面积释放给数据区。</text>
+
+    <rect class="box" x="0" y="372" width="820" height="140"/>
+    <text x="16" y="400" class="label">3. Timing 与右下辅助定位块</text>
+    <text x="16" y="430" class="text">Timing 横线：y=30, x=10..122。</text>
+    <text x="16" y="454" class="text">Timing 竖线：x=30, y=10..122。</text>
+    <text x="16" y="478" class="text">右下辅助定位：实际 7x7，保留区 9x9，外围多留 1 模块安全边界。</text>
+    <text x="16" y="502" class="text">它们共同负责采样相位、几何校对和右下角稳定标定。</text>
+
+    <rect class="box" x="0" y="530" width="820" height="168"/>
+    <text x="16" y="558" class="label">4. 数据区（Payload）</text>
+    <text x="16" y="588" class="text">扫描方式：整个 133x133 网格按 row-major 扫描。</text>
+    <text x="16" y="612" class="text">跳过三个主定位器、20x3 头部、两条 timing、9x9 辅助定位保留区。</text>
+    <text x="16" y="636" class="text">字节位序：MSB-first。</text>
+    <text x="16" y="660" class="text">理论容量：17023 bits。</text>
+    <text x="16" y="684" class="text">当前上限：2127 bytes / frame。</text>
+  </g>
+
+  <!-- 连接线 -->
+  <path class="arrow" d="M 1220 190 C 1180 190, 1160 175, 1110 175"/>
+  <path class="arrow" d="M 1220 388 C 1160 388, 1080 250, 300 250"/>
+  <path class="arrow" d="M 1220 560 C 1140 560, 1090 1000, 970 1034"/>
+
+  <!-- 底部摘要 -->
+  <g transform="translate(70,1270)">
+    <rect x="0" y="0" width="1128" height="150" fill="#f3f3f3" stroke="#b8b8b8" stroke-width="1.5"/>
+    <text x="18" y="30" class="label">摘要</text>
+    <text x="18" y="62" class="text">协议：V1.7-133-4F　　输出：1128x1128　　静区：每边 32 px　　逻辑区：1064x1064</text>
+    <text x="18" y="90" class="text">核心改动：把旧版 108x108 提升到 133x133，并落实成“三主定位器 + 右下辅助定位 + 安全边界”的真实实现。</text>
+    <text x="18" y="118" class="text">容量变化：1380 bytes → 2127 bytes，每帧新增 747 bytes。</text>
+  </g>
+</svg>

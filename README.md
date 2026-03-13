@@ -2,7 +2,7 @@
 
 ## 当前主线
 
-当前仓库推荐使用的实现是 `V1.6-108-4F` 自定义黑白传输主线：固定 `108x108` 逻辑网格、四角四个 finder、`16x10` header 保留区、两条 timing 线和一个固定 alignment。
+当前仓库推荐使用的实现是 `V1.7-133-4F` 自定义黑白传输主线：固定 `133x133` 逻辑网格、三个主定位器、右下辅助定位块（带 `9x9` 保留区与安全边界）、`20x3` 紧凑 header 保留区和两条 timing 线。
 
 当前默认对外口径优先强调两件事：
 
@@ -14,14 +14,14 @@
 - Windows 运行指引：`docs/windows_quickstart.md`
 - 变更记录：`docs/CHANGELOG.md`
 - 样例说明：`bin/samples/README.txt`
-- 默认输出尺寸：`1080x1080`
-- 默认模块尺寸：`module_px = 9`
-- 默认单帧载荷上限：`1380 bytes/frame`
+- 默认输出尺寸：`1128x1128`
+- 默认模块尺寸：`module_px = 8`
+- 默认单帧载荷上限：`2127 bytes/frame`
 - 推荐命令：`Project1 encode input.bin out/encode/input`
 
 ## 重要提醒
 
-- 当前默认 CLI、README、样例和联调口径都以 `V1.6-108-4F` 为准。
+- 当前默认 CLI、README、样例和联调口径都以 `V1.7-133-4F` 为准。
 - 现代码保留了 `protocol_iso.*`、`qr_iso.*` 及对应文档，便于回看 `v2` 实现，但它们不再是默认入口。
 - 当前 `decode` 只作为仓库内自测与联调辅助，不是默认交付中心。
 - 当前 `decode` 的首版验收范围只覆盖仓库自生成的帧目录和自生成 `demo.mp4`，不覆盖拍屏、透视畸变和历史外部样例。
@@ -57,7 +57,7 @@
 - 使用仓库脚本：
   - `.\scripts\run_project1.ps1 encode input.jpg out\encode\input`
   - `.\scripts\run_project1.ps1 decode out\encode\input\frames\physical out\decode\input`
-- 组员若仍复制旧命令里的 `--profile/--ecc/--canvas`，当前程序会接受并警告“这些参数已被忽略”，实际仍按 `V1.6-108-4F` 执行
+- 组员若仍复制旧命令里的 `--profile/--ecc/--canvas`，当前程序会接受并警告“这些参数已被忽略”，实际仍按 `V1.7-133-4F` 执行
 
 ## 当前输出结构
 

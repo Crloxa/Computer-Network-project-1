@@ -2,7 +2,7 @@
 
 ## 1. 先记住四件事
 
-- 当前默认主线是 `V1.6-108-4F`，不是旧 ISO QR v2。
+- 当前默认主线是 `V1.7-133-4F`，不是旧 ISO QR v2。
 - 在 Windows PowerShell 里不要直接敲 `Project1 ...`，而是用 `.\x64\Debug\Project1.exe ...`、`.\x64\Release\Project1.exe ...`，或者 `.\scripts\run_project1.ps1 ...`。
 - 必须从仓库根目录运行，或者让脚本帮你切回仓库根目录。
 - `ffmpeg.exe` 默认放在 `ffmpeg\bin\ffmpeg.exe`。
@@ -29,7 +29,7 @@
 期望看到：
 
 ```text
-Project1 protocol=V1.6-108-4F
+Project1 protocol=V1.7-133-4F
 ```
 
 如果你看到旧 ISO、OpenCV 或别的版本信息，说明你跑的不是当前仓库默认主线。
@@ -76,7 +76,7 @@ Project1 protocol=V1.6-108-4F
 - `--protocol-samples`
 - `--decode-debug`
 
-程序会明确警告“这些历史 ISO 参数已被忽略”，实际仍按 `V1.6-108-4F` 执行。
+程序会明确警告“这些历史 ISO 参数已被忽略”，实际仍按 `V1.7-133-4F` 执行。
 
 ## 5. ffmpeg 依赖口径
 
@@ -119,14 +119,14 @@ ffmpeg\bin\ffmpeg.exe
 
 ### 6.2 `OpenCV ... QRCodeEncoderImpl::generateQR`
 
-原因：你运行的不是当前仓库默认的 `V1.6-108-4F` 二进制，而是旧 ISO/OpenCV 构建产物或旧工作区。
+原因：你运行的不是当前仓库默认的 `V1.7-133-4F` 二进制，而是旧 ISO/OpenCV 构建产物或旧工作区。
 
 处理：
 
 1. 重新拉到当前仓库主线
 2. 在 Visual Studio 里重新构建 `x64|Debug`
 3. 先跑 `.\x64\Debug\Project1.exe --version`
-4. 确认输出 `Project1 protocol=V1.6-108-4F`
+4. 确认输出 `Project1 protocol=V1.7-133-4F`
 
 ### 6.3 `ffmpeg executable was not found`
 
@@ -151,4 +151,4 @@ ffmpeg\bin\ffmpeg.exe
 .\x64\Debug\Project1.exe --help
 ```
 
-如果 `--version` 不是 `V1.6-108-4F`，先重建再说。
+如果 `--version` 不是 `V1.7-133-4F`，先重建再说。

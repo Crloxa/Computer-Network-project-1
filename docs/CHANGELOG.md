@@ -8,6 +8,28 @@
 - 每条记录至少写明：日期、类型、范围、摘要、兼容性
 - 纯格式化、空白调整、错别字修正可不记录
 
+## 2026-03-13
+
+- Type: `Changed`
+  - Scope: `code`
+  - Summary: 将 `protocol_v1` 的实际绘制与校验逻辑从“四角都绘制 finder”对齐为“左上 / 右上 / 左下三个主定位器 + 右下辅助定位”，并为右下辅助定位保留 `9x9` 安全边界区，单帧 payload 上限相应调整为 `2127 bytes`
+  - Compatibility: `breaking`
+
+- Type: `Changed`
+  - Scope: `docs`
+  - Summary: 将 `protocol_v1` 文档与中文布局示意图的定位区说明从“四角等价 finder”修正为“参考 Visual-Net 的三主定位器 + 右下辅助定位”口径，并移除示意图中的“队内展示时怎么讲”说明框
+  - Compatibility: `non-breaking`
+
+- Type: `Added`
+  - Scope: `samples`
+  - Summary: 在 `bin/samples/` 新增 `protocol_v1_v1_7_133_layout_cn.svg`，用中文标注 `V1.7-133-4F` 的三主定位器、右下辅助定位、紧凑头部、timing 和 payload 区，便于队内汇报与协议对齐
+  - Compatibility: `non-breaking`
+
+- Type: `Changed`
+  - Scope: `protocol`
+  - Summary: 将 `protocol_v1` 的主线几何从 `V1.6-108-4F` 升级为 `V1.7-133-4F`，改为 `133x133 / module_px=8 / 三主定位器 / 右下 7x7 辅助定位（9x9 保留区）/ timing / 20x3` 紧凑头部布局，并把理论单帧 payload 上限提升到 `2127 bytes`
+  - Compatibility: `breaking`
+
 ## 2026-03-12
 
 - Type: `Added`

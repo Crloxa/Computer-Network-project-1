@@ -315,7 +315,7 @@ bool ValidateOptions(const protocol_v1::EncoderOptions& options, std::string* er
     }
     if (options.max_payload_bytes <= 0 || options.max_payload_bytes > protocol_v1::kMaxPayloadBytes) {
         if (error_message != nullptr) {
-            *error_message = "max_payload_bytes is out of the supported V1.6 range.";
+            *error_message = "max_payload_bytes is out of the supported V1.7 range.";
         }
         return false;
     }
@@ -337,11 +337,15 @@ void SetModule(image_io::BitMatrix* modules, int x, int y, bool black) {
 }
 
 void DrawFinder(image_io::BitMatrix* modules, int origin_x, int origin_y, bool invert_center) {
+    const int center = protocol_v1::kFinderSizeModules / 2;
+    const int inner_radius = std::max(0, center - 2);
     for (int y = 0; y < protocol_v1::kFinderSizeModules; ++y) {
         for (int x = 0; x < protocol_v1::kFinderSizeModules; ++x) {
-            const int distance = std::max(std::abs(x - 3), std::abs(y - 3));
-            bool black = (distance == 3) || (distance <= 1);
-            if (invert_center && x >= 2 && x <= 4 && y >= 2 && y <= 4) {
+            const int distance = std::max(std::abs(x - center), std::abs(y - center));
+            bool black = (distance == center) || (distance <= inner_radius);
+            if (invert_center &&
+                x >= center - inner_radius && x <= center + inner_radius &&
+                y >= center - inner_radius && y <= center + inner_radius) {
                 black = !black;
             }
             SetModule(modules, origin_x + x, origin_y + y, black);
@@ -360,14 +364,16 @@ void DrawTiming(image_io::BitMatrix* modules) {
     }
 }
 
-void DrawAlignment(image_io::BitMatrix* modules) {
-    for (int y = 0; y < protocol_v1::kAlignmentSizeModules; ++y) {
-        for (int x = 0; x < protocol_v1::kAlignmentSizeModules; ++x) {
-            const int distance = std::max(std::abs(x - 2), std::abs(y - 2));
-            const bool black = (distance == 2) || (distance == 0);
+void DrawAuxLocator(image_io::BitMatrix* modules) {
+    const int center = protocol_v1::kAuxLocatorSizeModules / 2;
+    const int inner_radius = std::max(0, center - 2);
+    for (int y = 0; y < protocol_v1::kAuxLocatorSizeModules; ++y) {
+        for (int x = 0; x < protocol_v1::kAuxLocatorSizeModules; ++x) {
+            const int distance = std::max(std::abs(x - center), std::abs(y - center));
+            const bool black = (distance == center) || (distance <= inner_radius);
             SetModule(modules,
-                      protocol_v1::kAlignmentOriginX + x,
-                      protocol_v1::kAlignmentOriginY + y,
+                      protocol_v1::kAuxLocatorOriginX + x,
+                      protocol_v1::kAuxLocatorOriginY + y,
                       black);
         }
     }
@@ -394,9 +400,8 @@ image_io::BitMatrix BuildFrameModules(const FrameHeader& header, const std::vect
     DrawFinder(&modules, 0, 0, false);
     DrawFinder(&modules, protocol_v1::kFinderTopRightMin + 1, 0, false);
     DrawFinder(&modules, 0, protocol_v1::kFinderBottomLeftMin + 1, false);
-    DrawFinder(&modules, protocol_v1::kFinderTopRightMin + 1, protocol_v1::kFinderBottomLeftMin + 1, true);
     DrawTiming(&modules);
-    DrawAlignment(&modules);
+    DrawAuxLocator(&modules);
     DrawHeader(header, &modules);
     DrawPayload(payload, &modules);
     return modules;
@@ -460,10 +465,10 @@ image_io::RgbImage RenderLayoutGuide() {
                       protocol_v1::kHeaderHeightModules,
                       image_io::kBlue);
     DrawModuleOutline(&physical,
-                      protocol_v1::kAlignmentOriginX,
-                      protocol_v1::kAlignmentOriginY,
-                      protocol_v1::kAlignmentSizeModules,
-                      protocol_v1::kAlignmentSizeModules,
+                      protocol_v1::kAuxLocatorReserveOriginX,
+                      protocol_v1::kAuxLocatorReserveOriginY,
+                      protocol_v1::kAuxLocatorReserveSizeModules,
+                      protocol_v1::kAuxLocatorReserveSizeModules,
                       image_io::kBlue);
     return physical;
 }
@@ -503,7 +508,7 @@ std::vector<EncodedFrame> EncodeBytesToFrames(const std::vector<uint8_t>& bytes,
     const std::size_t chunk_size = static_cast<std::size_t>(options.max_payload_bytes);
     const std::size_t total_frame_count = std::max<std::size_t>(1U, (bytes.size() + chunk_size - 1U) / chunk_size);
     if (total_frame_count > 0xFFFFU) {
-        throw std::runtime_error("Input is too large for the current V1.6 frame_seq range.");
+        throw std::runtime_error("Input is too large for the current V1.7 frame_seq range.");
     }
 
     std::vector<EncodedFrame> frames;
@@ -634,7 +639,7 @@ bool WriteRepeatedVideo(const std::vector<EncodedFrame>& frames,
         return true;
     }
     std::filesystem::remove_all(temp_dir);
-    std::ofstream(output_dir / "video_status.txt") << "Video encoded with ffmpeg from V1.6 internal BMP frames.\n";
+    std::ofstream(output_dir / "video_status.txt") << "Video encoded with ffmpeg from V1.7 internal BMP frames.\n";
     return true;
 }
 
@@ -719,11 +724,15 @@ std::vector<ImageFile> CollectDecodeImages(const std::filesystem::path& input_pa
 }
 
 bool ValidateFinder(const image_io::BitMatrix& modules, int origin_x, int origin_y, bool invert_center) {
+    const int center = protocol_v1::kFinderSizeModules / 2;
+    const int inner_radius = std::max(0, center - 2);
     for (int y = 0; y < protocol_v1::kFinderSizeModules; ++y) {
         for (int x = 0; x < protocol_v1::kFinderSizeModules; ++x) {
-            const int distance = std::max(std::abs(x - 3), std::abs(y - 3));
-            bool expected = (distance == 3) || (distance <= 1);
-            if (invert_center && x >= 2 && x <= 4 && y >= 2 && y <= 4) {
+            const int distance = std::max(std::abs(x - center), std::abs(y - center));
+            bool expected = (distance == center) || (distance <= inner_radius);
+            if (invert_center &&
+                x >= center - inner_radius && x <= center + inner_radius &&
+                y >= center - inner_radius && y <= center + inner_radius) {
                 expected = !expected;
             }
             if (modules.get(origin_x + x, origin_y + y) != expected) {
@@ -750,13 +759,15 @@ bool ValidateTiming(const image_io::BitMatrix& modules) {
     return true;
 }
 
-bool ValidateAlignment(const image_io::BitMatrix& modules) {
-    for (int y = 0; y < protocol_v1::kAlignmentSizeModules; ++y) {
-        for (int x = 0; x < protocol_v1::kAlignmentSizeModules; ++x) {
-            const int distance = std::max(std::abs(x - 2), std::abs(y - 2));
-            const bool expected = (distance == 2) || (distance == 0);
-            if (modules.get(protocol_v1::kAlignmentOriginX + x,
-                            protocol_v1::kAlignmentOriginY + y) != expected) {
+bool ValidateAuxLocator(const image_io::BitMatrix& modules) {
+    const int center = protocol_v1::kAuxLocatorSizeModules / 2;
+    const int inner_radius = std::max(0, center - 2);
+    for (int y = 0; y < protocol_v1::kAuxLocatorSizeModules; ++y) {
+        for (int x = 0; x < protocol_v1::kAuxLocatorSizeModules; ++x) {
+            const int distance = std::max(std::abs(x - center), std::abs(y - center));
+            const bool expected = (distance == center) || (distance <= inner_radius);
+            if (modules.get(protocol_v1::kAuxLocatorOriginX + x,
+                            protocol_v1::kAuxLocatorOriginY + y) != expected) {
                 return false;
             }
         }
@@ -767,11 +778,7 @@ bool ValidateAlignment(const image_io::BitMatrix& modules) {
 bool ValidateStaticPatterns(const image_io::BitMatrix& modules, std::string* error_message) {
     if (!ValidateFinder(modules, 0, 0, false) ||
         !ValidateFinder(modules, protocol_v1::kFinderTopRightMin + 1, 0, false) ||
-        !ValidateFinder(modules, 0, protocol_v1::kFinderBottomLeftMin + 1, false) ||
-        !ValidateFinder(modules,
-                        protocol_v1::kFinderTopRightMin + 1,
-                        protocol_v1::kFinderBottomLeftMin + 1,
-                        true)) {
+        !ValidateFinder(modules, 0, protocol_v1::kFinderBottomLeftMin + 1, false)) {
         if (error_message != nullptr) {
             *error_message = "finder_pattern_mismatch";
         }
@@ -783,9 +790,9 @@ bool ValidateStaticPatterns(const image_io::BitMatrix& modules, std::string* err
         }
         return false;
     }
-    if (!ValidateAlignment(modules)) {
+    if (!ValidateAuxLocator(modules)) {
         if (error_message != nullptr) {
-            *error_message = "alignment_pattern_mismatch";
+            *error_message = "aux_locator_pattern_mismatch";
         }
         return false;
     }
@@ -1128,7 +1135,7 @@ bool DecodeV1Package(const std::filesystem::path& input_path,
     }
 
     if (valid_frames.empty()) {
-        return finalizeDecode("no_valid_frames", 0U, {}, "No valid V1.6 frames were decoded from the input.");
+        return finalizeDecode("no_valid_frames", 0U, {}, "No valid V1.7 frames were decoded from the input.");
     }
 
     std::vector<uint8_t> output_bytes;
@@ -1193,7 +1200,7 @@ bool DecodeV1Package(const std::filesystem::path& input_path,
         }
 
         if (!missing_frames.empty()) {
-            final_error = "Decoded V1.6 frames are incomplete; see missing_frames.txt.";
+            final_error = "Decoded V1.7 frames are incomplete; see missing_frames.txt.";
             return finalizeDecode("missing_frames", 0U, missing_frames, final_error);
         }
         if (!seen_end) {

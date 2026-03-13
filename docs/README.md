@@ -5,8 +5,8 @@
 ## 阅读入口
 
 - 当前有效的工程设计、协议与编解码主线：看 `docs/protocols/protocol_v1.md`
-  - 说明：当前代码已经切回 `V1.6-108-4F`
-  - 说明：头部语义采用最简控制头，`16x10` 保留区仅使用前 3 行
+  - 说明：当前代码主线是 `V1.7-133-4F`
+  - 说明：几何布局采用“三主定位器 + 右下辅助定位 + `20x3` 紧凑头部”
   - 说明：默认交付叙事优先强调 `encoder + samples/demo`，`decode` 只保留作仓库内自测辅助
 - Windows 运行与排障：看 `docs/windows_quickstart.md`
   - 说明：给 PowerShell、Visual Studio、`ffmpeg.exe` 路径和常见报错提供可直接照抄的保姆级指引
@@ -20,7 +20,7 @@
 
 - `docs/README.md`：文档入口与阅读顺序
 - `docs/CHANGELOG.md`：集中式改动记录，最新在前
-- `docs/protocols/protocol_v1.md`：当前有效的 `V1.6-108-4F` 主线协议说明
+- `docs/protocols/protocol_v1.md`：当前有效的 `V1.7-133-4F` 主线协议说明
 - `docs/windows_quickstart.md`：Windows 构建、运行与排障手册
 - `docs/protocols/protocol_iso_qr_v2_course.md`：历史 `v2` 方案说明，代码仍保留但不默认暴露
 - `docs/protocols/protocol_iso_v2_integration_contract.md`：历史 `v2` 联调约定

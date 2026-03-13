@@ -76,8 +76,7 @@ bool IsFinderReserveCell(int x, int y) {
     const bool in_top_left = x <= kFinderTopLeftMax && y <= kFinderTopLeftMax;
     const bool in_top_right = x >= kFinderTopRightMin && y <= kFinderTopLeftMax;
     const bool in_bottom_left = x <= kFinderTopLeftMax && y >= kFinderBottomLeftMin;
-    const bool in_bottom_right = x >= kFinderTopRightMin && y >= kFinderBottomLeftMin;
-    return in_top_left || in_top_right || in_bottom_left || in_bottom_right;
+    return in_top_left || in_top_right || in_bottom_left;
 }
 
 bool IsTimingCell(int x, int y) {
@@ -86,16 +85,19 @@ bool IsTimingCell(int x, int y) {
     return in_horizontal || in_vertical;
 }
 
-bool IsAlignmentCell(int x, int y) {
-    return IsInsideRect(x, y, kAlignmentOriginX, kAlignmentOriginY,
-                        kAlignmentSizeModules, kAlignmentSizeModules);
+bool IsAuxLocatorReserveCell(int x, int y) {
+    return IsInsideRect(x, y, kAuxLocatorReserveOriginX, kAuxLocatorReserveOriginY,
+                        kAuxLocatorReserveSizeModules, kAuxLocatorReserveSizeModules);
 }
 
 bool IsPayloadCell(int x, int y) {
     if (!IsInBounds(x, y)) {
         return false;
     }
-    return !IsFinderReserveCell(x, y) && !IsHeaderCell(x, y) && !IsTimingCell(x, y) && !IsAlignmentCell(x, y);
+    return !IsFinderReserveCell(x, y) &&
+           !IsHeaderCell(x, y) &&
+           !IsTimingCell(x, y) &&
+           !IsAuxLocatorReserveCell(x, y);
 }
 
 bool IsStartFrame(FrameType frame_type) {

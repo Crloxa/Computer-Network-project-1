@@ -9,7 +9,7 @@
 
 namespace {
 
-constexpr char kCurrentProtocol[] = "V1.6-108-4F";
+constexpr char kCurrentProtocol[] = "V1.7-133-4F";
 
 void PrintUsage(const char* program_name) {
     std::cout << "Usage:\n"
@@ -20,10 +20,10 @@ void PrintUsage(const char* program_name) {
               << "  " << program_name << " encode <input_file> <output_dir> [--fps n] [--repeat n]\n"
               << "  " << program_name << " decode <input_video_or_frame_dir> <output_dir>\n\n"
               << "Commands:\n"
-              << "  samples  Write V1.6-108-4F sample images and layout guide for effect preview.\n"
+              << "  samples  Write V1.7-133-4F sample images and layout guide for effect preview.\n"
               << "  demo     Alias of encode; keeps the historical demo entry for effect generation.\n"
-              << "  encode   Encode a file into V1.6-108-4F frames and demo.mp4.\n"
-              << "  decode   Self-check helper for repository-generated V1.6 frames or demo.mp4.\n";
+              << "  encode   Encode a file into V1.7-133-4F frames and demo.mp4.\n"
+              << "  decode   Self-check helper for repository-generated V1.7 frames or demo.mp4.\n";
 }
 
 void PrintVersion() {
@@ -107,7 +107,7 @@ int RunSamples(const std::filesystem::path& output_dir, const protocol_v1::Encod
         std::cerr << error_message << std::endl;
         return 1;
     }
-    std::cout << "V1.6 samples written to: " << output_dir << std::endl;
+    std::cout << "V1.7 samples written to: " << output_dir << std::endl;
     return 0;
 }
 
@@ -119,7 +119,7 @@ int RunEncode(const std::filesystem::path& input_path,
         std::cerr << error_message << std::endl;
         return 1;
     }
-    std::cout << "V1.6 package written to: " << output_dir << std::endl;
+    std::cout << "V1.7 package written to: " << output_dir << std::endl;
     return 0;
 }
 
@@ -131,7 +131,7 @@ int RunDecode(const std::filesystem::path& input_path,
         std::cerr << error_message << std::endl;
         return 1;
     }
-    std::cout << "V1.6 decode output written to: " << output_dir << std::endl;
+    std::cout << "V1.7 decode output written to: " << output_dir << std::endl;
     return 0;
 }
 
