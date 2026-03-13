@@ -39,8 +39,9 @@ namespace Code
 	constexpr int HeaderBitWidth = 3;
 	constexpr int HeaderInnerLeft = 0;
 	constexpr int TopDataLeft = HeaderLeft + HeaderWidth;
-	constexpr int TopDataWidth = 35;
+	constexpr int TopDataWidth = 43;
 	constexpr int DataAreaCount = 4;
+	constexpr int PaddingCellCount = 4;
 
 	struct DataArea
 	{
@@ -89,19 +90,21 @@ namespace Code
 
 	const std::array<DataArea, DataAreaCount> kDataAreas =
 	{{
-		{3, 77, 18, 35, 0},
+		{3, 69, 18, 43, 0},
 		{21, 3, 88, 127, 0},
 		{109, 3, 3, 127, 0},
 		{112, 21, 18, 91, 0}
 	}};
 
-	const std::array<DebugRegion, 7> kDebugRegions =
+	const std::array<DebugRegion, 9> kDebugRegions =
 	{{
 		{"header", HeaderTop, HeaderLeft, HeaderHeight, HeaderWidth, Vec3b(0, 0, 255)},
 		{"data1", kDataAreas[0].top, kDataAreas[0].left, kDataAreas[0].height, kDataAreas[0].width, Vec3b(255, 0, 0)},
 		{"data2", kDataAreas[1].top, kDataAreas[1].left, kDataAreas[1].height, kDataAreas[1].width, Vec3b(0, 255, 0)},
 		{"data4", kDataAreas[2].top, kDataAreas[2].left, kDataAreas[2].height, kDataAreas[2].width, Vec3b(0, 255, 255)},
 		{"data3", kDataAreas[3].top, kDataAreas[3].left, kDataAreas[3].height, kDataAreas[3].width, Vec3b(255, 255, 0)},
+		{"corner_data_v", 112, 112, 18, 9, Vec3b(0, 200, 255)},
+		{"corner_data_h", 112, 121, 9, 9, Vec3b(0, 200, 255)},
 		{"corner", FrameSize - CornerReserveSize, FrameSize - CornerReserveSize, CornerReserveSize, CornerReserveSize, Vec3b(255, 0, 255)},
 		{"small_qr", FrameSize - SmallQrPointbias - SmallQrPointRadius, FrameSize - SmallQrPointbias - SmallQrPointRadius, SmallQrPointRadius * 2 + 1, SmallQrPointRadius * 2 + 1, Vec3b(0, 128, 255)}
 	}};
@@ -115,6 +118,12 @@ namespace Code
 	bool isInsideCornerQuietZone(int row, int col)
 	{
 		return row >= 130 || col >= 130;
+	}
+
+	bool isInsideCornerSafetyZone(int row, int col)
+	{
+		const int center = FrameSize - SmallQrPointbias;
+		return std::abs(row - center) <= SmallQrPointRadius + 2 && std::abs(col - center) <= SmallQrPointRadius + 2;
 	}
 
 	void fillBinaryNoiseCell(Vec3b& cell)
@@ -136,7 +145,28 @@ namespace Code
 		return cells;
 	}
 
-	std::vector<CellPos> buildMergedDataCells()
+	std::vector<CellPos> buildCornerDataCells()
+	{
+		std::vector<CellPos> cells;
+		for (int row = FrameSize - CornerReserveSize; row < FrameSize; ++row)
+		{
+			for (int col = FrameSize - CornerReserveSize; col < FrameSize; ++col)
+			{
+				if (isInsideCornerQuietZone(row, col))
+				{
+					continue;
+				}
+				if (isInsideCornerSafetyZone(row, col))
+				{
+					continue;
+				}
+				cells.push_back({ row, col });
+			}
+		}
+		return cells;
+	}
+
+	std::vector<CellPos> buildFullDataCells()
 	{
 		std::vector<CellPos> cells;
 		for (const auto& area : kDataAreas)
@@ -144,17 +174,29 @@ namespace Code
 			const auto areaCells = buildAreaCells(area);
 			cells.insert(cells.end(), areaCells.begin(), areaCells.end());
 		}
-		if (!cells.empty())
+		const auto cornerCells = buildCornerDataCells();
+		cells.insert(cells.end(), cornerCells.begin(), cornerCells.end());
+		return cells;
+	}
+
+	std::vector<CellPos> buildMergedDataCells()
+	{
+		auto cells = buildFullDataCells();
+		if (cells.size() > PaddingCellCount)
 		{
-			cells.pop_back();
+			cells.resize(cells.size() - PaddingCellCount);
 		}
 		return cells;
 	}
 
-	CellPos getPaddingCell()
+	std::vector<CellPos> getPaddingCells()
 	{
-		const auto lastAreaCells = buildAreaCells(kDataAreas.back());
-		return lastAreaCells.back();
+		const auto cells = buildFullDataCells();
+		if (cells.size() <= PaddingCellCount)
+		{
+			return {};
+		}
+		return std::vector<CellPos>(cells.end() - PaddingCellCount, cells.end());
 	}
 
 	void fillAreaNoise(Mat& mat, const DataArea& area)
@@ -361,12 +403,15 @@ namespace Code
 
 	void fillDataNoise(Mat& mat)
 	{
-		for (const auto& area : kDataAreas)
+		const auto mergedCells = buildMergedDataCells();
+		for (const auto& cell : mergedCells)
 		{
-			fillAreaNoise(mat, area);
+			fillBinaryNoiseCell(mat.at<Vec3b>(cell.row, cell.col));
 		}
-		const CellPos paddingCell = getPaddingCell();
-		mat.at<Vec3b>(paddingCell.row, paddingCell.col) = pixel[White];
+		for (const auto& cell : getPaddingCells())
+		{
+			mat.at<Vec3b>(cell.row, cell.col) = pixel[White];
+		}
 	}
 
 	void BulidCheckCodeAndFrameNo(Mat& mat, uint16_t checkcode, uint16_t FrameNo)
