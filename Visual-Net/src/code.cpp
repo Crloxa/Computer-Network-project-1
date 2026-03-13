@@ -1,46 +1,51 @@
+#include "code.h"
 
-//’‚∏ˆŒƒº˛∏∫‘∂˛Œ¨¬Îµƒ±‡¬Î
-#include"code.h"
-//∂®“Âœ¬√Ê“ª∏ˆ∫Í¿¥ø™∆Ùdebug
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
+
+// ÂÆö‰πâ‰∏ãÈù¢Ëøô‰∏™ÂÆèÊù•ÂºÄÂêØÁºñÁ†ÅÁ´ØË∞ÉËØïÂõæÊòæÁ§∫„ÄÇ
 //#define Code_DEBUG
 #define Show_Scale_Img(src) do\
 {\
-	Mat temp=ScaleToDisSize(src);\
+	Mat temp = ScaleToDisSize(src);\
 	imshow("Code_DEBUG", temp);\
 	waitKey();\
-}while (0);
+} while (0)
+
 namespace Code
 {
-	//constexpr int BytesPerFrame = 3738;
 	constexpr int BytesPerFrame = 1242;
-	constexpr int FrameSize = 108;
+	constexpr int FrameSize = 133;
 	constexpr int FrameOutputRate = 10;
+	constexpr int FrameOutputSize = FrameSize * FrameOutputRate;
 	constexpr int SafeAreaWidth = 2;
-	constexpr int QrPointSize = 18;
+	constexpr int QrPointSize = 21;
 	constexpr int SmallQrPointbias = 6;
+	constexpr int SmallQrPointRadius = 3;
+	constexpr int HeaderRowCount = 3;
+	constexpr int HeaderStartRow = QrPointSize;
+	constexpr int DataStart = QrPointSize + HeaderRowCount;
+	constexpr int CornerReserveSize = 21;
+	constexpr int SmallAreaSplit = 8;
 	constexpr int RectAreaCount = 7;
-	const Vec3b pixel[8] = 
-	{ 
-		Vec3b(0,0,0),Vec3b(0,0,255),Vec3b(0,255,0),Vec3b(0,255,255),
-		Vec3b(255,0,0),Vec3b(255,0,255),Vec3b(255,255,0), Vec3b(255,255,255)
-	};
-	//const int lenlim[RectAreaCount] = { 426,432,1944,432,432,48,24 };
-	const int lenlim[RectAreaCount] = { 138,144,648,144,144,16,8 };
-	const int areapos[RectAreaCount][2][2] = //[2][2],µ⁄“ªŒ¨∂»¥˙±Ì∏ﬂøÌ£¨µ⁄∂˛Œ¨∂»¥˙±Ì◊Û…œΩ«◊¯±Í
+
+	struct DataRegion
 	{
-		{{69,16},{QrPointSize + 3,SafeAreaWidth}},
-		{{16,72},{SafeAreaWidth,QrPointSize}},
-		{{72,72},{QrPointSize,QrPointSize}},
-		{{72,16},{QrPointSize,FrameSize - QrPointSize}},
-		{{16,72},{FrameSize - QrPointSize,QrPointSize}},
-		{{8,16},{FrameSize  - QrPointSize,FrameSize - QrPointSize}},
-		{{8,8},{FrameSize - QrPointSize + 8,FrameSize - QrPointSize}}
+		int top;
+		int left;
+		int height;
+		int width;
 	};
+
 	enum color
 	{
 		Black = 0,
 		White = 7
 	};
+
 	enum class FrameType
 	{
 		Start = 0,
@@ -48,241 +53,301 @@ namespace Code
 		StartAndEnd = 2,
 		Normal = 3
 	};
+
+	const Vec3b pixel[8] =
+	{
+		Vec3b(0, 0, 0), Vec3b(0, 0, 255), Vec3b(0, 255, 0), Vec3b(0, 255, 255),
+		Vec3b(255, 0, 0), Vec3b(255, 0, 255), Vec3b(255, 255, 0), Vec3b(255, 255, 255)
+	};
+
+	const std::array<DataRegion, RectAreaCount> kDataRegions =
+	{{
+		{DataStart, SafeAreaWidth, FrameSize - CornerReserveSize - DataStart, 16},
+		{SafeAreaWidth, DataStart, 16, FrameSize - QrPointSize - DataStart},
+		{DataStart, DataStart, 72, 72},
+		{DataStart, 96, 72, 16},
+		{96, DataStart, 16, 72},
+		{96, 96, 16, SmallAreaSplit},
+		{104, 104, SmallAreaSplit, SmallAreaSplit}
+	}};
+
+	int getRegionCapacityBytes(const DataRegion& region)
+	{
+		return region.height * (region.width / 8);
+	}
+
+	bool isInsideSmallQrPoint(int row, int col)
+	{
+		const int center = FrameSize - SmallQrPointbias;
+		return std::abs(row - center) <= SmallQrPointRadius && std::abs(col - center) <= SmallQrPointRadius;
+	}
+
+	void fillBinaryNoiseCell(Vec3b& cell)
+	{
+		cell = pixel[(std::rand() & 1) ? White : Black];
+	}
+
 	Mat ScaleToDisSize(const Mat& src)
 	{
-		Mat dis;
-		constexpr int FrameOutputSize = FrameSize * FrameOutputRate;
-		dis = Mat(FrameOutputSize, FrameOutputSize, CV_8UC3);
+		Mat dis(FrameOutputSize, FrameOutputSize, CV_8UC3);
 		for (int i = 0; i < FrameOutputSize; ++i)
 		{
 			for (int j = 0; j < FrameOutputSize; ++j)
 			{
-				dis.at<Vec3b>(i,j) = src.at<Vec3b>(i/10, j/10);
+				dis.at<Vec3b>(i, j) = src.at<Vec3b>(i / FrameOutputRate, j / FrameOutputRate);
 			}
 		}
 		return dis;
 	}
+
 	uint16_t CalCheckCode(const unsigned char* info, int len, bool isStart, bool isEnd, uint16_t frameBase)
 	{
 		uint16_t ans = 0;
-		int cutlen = (len / 2)*2;
+		const int cutlen = (len / 2) * 2;
 		for (int i = 0; i < cutlen; i += 2)
-			ans ^= ((uint16_t)info[i] << 8) | info[i + 1];
+			ans ^= (static_cast<uint16_t>(info[i]) << 8) | info[i + 1];
 		if (len & 1)
-			ans ^= (uint16_t)info[cutlen] << 8;
+			ans ^= static_cast<uint16_t>(info[cutlen]) << 8;
 		ans ^= len;
 		ans ^= frameBase;
-		uint16_t temp = (isStart << 1) + isEnd;
-		ans ^= temp;
+		ans ^= static_cast<uint16_t>((isStart << 1) + isEnd);
 		return ans;
 	}
+
 	void BulidSafeArea(Mat& mat)
 	{
-		constexpr int pos[4][2][2] =
+		for (int i = 0; i < FrameSize; ++i)
 		{
-			{{0,FrameSize},{0,SafeAreaWidth}},
-			{{0,FrameSize},{FrameSize - SafeAreaWidth,FrameSize}},
-			{{0, SafeAreaWidth },{0,FrameSize}},
-			{{FrameSize - SafeAreaWidth,FrameSize},{0,FrameSize}}
-		};
-		for (int k=0;k<4;++k)
-			for (int i = pos[k][0][0]; i < pos[k][0][1]; ++i)
-				for (int j = pos[k][1][0]; j < pos[k][1][1]; ++j)
-					mat.at<Vec3b>(i,j)=pixel[White];
+			for (int j = 0; j < SafeAreaWidth; ++j)
+			{
+				mat.at<Vec3b>(i, j) = pixel[White];
+				mat.at<Vec3b>(i, FrameSize - SafeAreaWidth + j) = pixel[White];
+				mat.at<Vec3b>(j, i) = pixel[White];
+				mat.at<Vec3b>(FrameSize - SafeAreaWidth + j, i) = pixel[White];
+			}
+		}
 #ifdef Code_DEBUG
 		Show_Scale_Img(mat);
 #endif
-		return;
 	}
+
+	void fillCornerNoiseArea(Mat& mat)
+	{
+		const int start = FrameSize - CornerReserveSize;
+		for (int i = start; i < FrameSize; ++i)
+		{
+			for (int j = start; j < FrameSize; ++j)
+			{
+				if (isInsideSmallQrPoint(i, j))
+					continue;
+				fillBinaryNoiseCell(mat.at<Vec3b>(i, j));
+			}
+		}
+	}
+
+	void drawSmallQrPoint(Mat& mat)
+	{
+		const int center = FrameSize - SmallQrPointbias;
+		const Vec3b vec3bsmall[5] =
+		{
+			pixel[Black],
+			pixel[Black],
+			pixel[White],
+			pixel[Black],
+			pixel[White],
+		};
+		for (int i = -SmallQrPointRadius; i <= SmallQrPointRadius; ++i)
+		{
+			for (int j = -SmallQrPointRadius; j <= SmallQrPointRadius; ++j)
+			{
+				mat.at<Vec3b>(center + i, center + j) = vec3bsmall[std::max(std::abs(i), std::abs(j))];
+			}
+		}
+	}
+
 	void BulidQrPoint(Mat& mat)
 	{
-		//ªÊ÷∆¥Û∂˛Œ¨¬Î ∂±µ„
-		constexpr int pointPos[4][2] = 
-		{ 
-			{0,0},
-		    {0,FrameSize- QrPointSize},
-		    {FrameSize - QrPointSize,0}
-		};
-		const Vec3b vec3bBig[9] =
+		const std::array<std::array<int, 2>, 3> pointPos =
+		{{
+			{0, 0},
+			{0, FrameSize - QrPointSize},
+			{FrameSize - QrPointSize, 0}
+		}};
+		const Vec3b vec3bBig[11] =
 		{
-			pixel[Black],
-			pixel[Black],
-			pixel[Black],
-			pixel[White],
-			pixel[White],
-			pixel[Black],
-			pixel[Black],
-			pixel[White],
-			pixel[White]
+			pixel[Black], pixel[Black], pixel[Black], pixel[Black],
+			pixel[White], pixel[White],
+			pixel[Black], pixel[Black],
+			pixel[White], pixel[White], pixel[White]
 		};
-		for (int i = 0; i < 3; ++i)
-			for (int j = 0; j < QrPointSize; ++j)
-				for (int k = 0; k < QrPointSize; ++k)
-					mat.at<Vec3b>(pointPos[i][0] + j, pointPos[i][1] + k) =
-						vec3bBig[(int)max(fabs(j-8.5), fabs(k-8.5))];
-		//ªÊ÷∆–°∂˛Œ¨¬Î ∂±µ„
-		constexpr int posCenter[2] = { FrameSize - SmallQrPointbias,FrameSize - SmallQrPointbias };
-		const Vec3b vec3bsmall[5] =
-		{ 
-			pixel[Black],
-			pixel[Black],
-			pixel[White],
-			pixel[Black],
-			pixel[White],
-		};
-		for (int i = -4; i <= 4; ++i)
-			for (int j = -4; j <= 4; ++j)
-				mat.at<Vec3b>(posCenter[0] + i, posCenter[1] + j) = 
-							  vec3bsmall[max(abs(i),abs(j))];
+		for (const auto& pos : pointPos)
+		{
+			for (int i = 0; i < QrPointSize; ++i)
+			{
+				for (int j = 0; j < QrPointSize; ++j)
+				{
+					const int index = std::max(std::abs(i - QrPointSize / 2), std::abs(j - QrPointSize / 2));
+					mat.at<Vec3b>(pos[0] + i, pos[1] + j) = vec3bBig[index];
+				}
+			}
+		}
+		fillCornerNoiseArea(mat);
+		drawSmallQrPoint(mat);
 #ifdef Code_DEBUG
 		Show_Scale_Img(mat);
 #endif
 	}
-	void BulidCheckCodeAndFrameNo(Mat& mat,uint16_t checkcode,uint16_t FrameNo)
+
+	void fillDataNoise(Mat& mat)
 	{
-		//uint32_t outputCode = (checkcode << 8) | (FrameNo);
-		/*for (int i = 8; i < 16; ++i)
+		for (const auto& region : kDataRegions)
 		{
-			mat.at<Vec3b>(QrPointSize+1, SafeAreaWidth + i) = pixel[outputCode & 7];
-			outputCode >>= 3;
-		}*/
+			for (int i = 0; i < region.height; ++i)
+			{
+				for (int j = 0; j < region.width; ++j)
+				{
+					fillBinaryNoiseCell(mat.at<Vec3b>(region.top + i, region.left + j));
+				}
+			}
+		}
+	}
+
+	void BulidCheckCodeAndFrameNo(Mat& mat, uint16_t checkcode, uint16_t FrameNo)
+	{
 		for (int i = 0; i < 16; ++i)
 		{
-			mat.at<Vec3b>(QrPointSize+1, SafeAreaWidth + i) = pixel[(checkcode & 1)?7:0];
+			mat.at<Vec3b>(HeaderStartRow + 1, SafeAreaWidth + i) = pixel[(checkcode & 1) ? White : Black];
 			checkcode >>= 1;
 		}
 		for (int i = 0; i < 16; ++i)
 		{
-			mat.at<Vec3b>(QrPointSize + 2, SafeAreaWidth + i) = pixel[(FrameNo & 1) ? 7 : 0];
+			mat.at<Vec3b>(HeaderStartRow + 2, SafeAreaWidth + i) = pixel[(FrameNo & 1) ? White : Black];
 			FrameNo >>= 1;
-	}
-#ifdef Code_DEBUG
-		Show_Scale_Img(mat);
-#endif
-	}
-	void BulidInfoRect(Mat& mat, const char* info, int len,int areaID)
-	{
-		const unsigned char* pos = (const unsigned char*)info;
-		const unsigned char* end = pos + len;
-		for (int i = 0; i < areapos[areaID][0][0]; ++i)
-		{
-			uint32_t outputCode = 0;
-			for (int j = 0; j < areapos[areaID][0][1]/8; ++j)
-			{
-				outputCode |= *pos++;
-				/*for (int k = 0; k < 3; ++k)
-				{
-					outputCode <<= 8;
-					if (pos != end)
-						outputCode |= *pos++;
-				}*/
-				for (int k = areapos[areaID][1][1]; k < areapos[areaID][1][1]+8; ++k)
-				{
-					//mat.at<Vec3b>(i+areapos[areaID][1][0], j*8+k) = pixel[outputCode&7];
-					//outputCode >>= 3;
-					mat.at<Vec3b>(i+areapos[areaID][1][0], j*8+k) = pixel[(outputCode&1)?7:0];
-					outputCode >>= 1;
-				}
-				if (pos == end) break;
-			}
-			if (pos == end) break;
 		}
 #ifdef Code_DEBUG
 		Show_Scale_Img(mat);
 #endif
 	}
+
+	void BulidInfoRect(Mat& mat, const char* info, int len, int areaID)
+	{
+		const DataRegion& region = kDataRegions[areaID];
+		const unsigned char* pos = reinterpret_cast<const unsigned char*>(info);
+		const unsigned char* end = pos + len;
+		for (int i = 0; i < region.height; ++i)
+		{
+			for (int j = 0; j < region.width / 8; ++j)
+			{
+				if (pos == end)
+					break;
+				unsigned char outputCode = *pos++;
+				for (int k = 0; k < 8; ++k)
+				{
+					mat.at<Vec3b>(region.top + i, region.left + j * 8 + k) = pixel[(outputCode & 1) ? White : Black];
+					outputCode >>= 1;
+				}
+			}
+			if (pos == end)
+				break;
+		}
+#ifdef Code_DEBUG
+		Show_Scale_Img(mat);
+#endif
+	}
+
 	void BulidFrameFlag(Mat& mat, FrameType frameType, int tailLen)
 	{
 		switch (frameType)
 		{
 		case FrameType::Start:
-			mat.at<Vec3b>(QrPointSize, SafeAreaWidth) = pixel[White];
-			mat.at<Vec3b>(QrPointSize, SafeAreaWidth + 1) = pixel[White];
-			mat.at<Vec3b>(QrPointSize, SafeAreaWidth + 2) = pixel[Black];
-			mat.at<Vec3b>(QrPointSize, SafeAreaWidth + 3) = pixel[Black];
+			mat.at<Vec3b>(HeaderStartRow, SafeAreaWidth) = pixel[White];
+			mat.at<Vec3b>(HeaderStartRow, SafeAreaWidth + 1) = pixel[White];
+			mat.at<Vec3b>(HeaderStartRow, SafeAreaWidth + 2) = pixel[Black];
+			mat.at<Vec3b>(HeaderStartRow, SafeAreaWidth + 3) = pixel[Black];
 			break;
 		case FrameType::End:
-			mat.at<Vec3b>(QrPointSize, SafeAreaWidth) = pixel[Black];
-			mat.at<Vec3b>(QrPointSize, SafeAreaWidth + 1) = pixel[Black];
-			mat.at<Vec3b>(QrPointSize, SafeAreaWidth + 2) = pixel[White];
-			mat.at<Vec3b>(QrPointSize, SafeAreaWidth + 3) = pixel[White];
+			mat.at<Vec3b>(HeaderStartRow, SafeAreaWidth) = pixel[Black];
+			mat.at<Vec3b>(HeaderStartRow, SafeAreaWidth + 1) = pixel[Black];
+			mat.at<Vec3b>(HeaderStartRow, SafeAreaWidth + 2) = pixel[White];
+			mat.at<Vec3b>(HeaderStartRow, SafeAreaWidth + 3) = pixel[White];
 			break;
 		case FrameType::StartAndEnd:
-			mat.at<Vec3b>(QrPointSize, SafeAreaWidth) = pixel[White];
-			mat.at<Vec3b>(QrPointSize, SafeAreaWidth + 1) = pixel[White];
-			mat.at<Vec3b>(QrPointSize, SafeAreaWidth + 2) = pixel[White];
-			mat.at<Vec3b>(QrPointSize, SafeAreaWidth + 3) = pixel[White];
+			mat.at<Vec3b>(HeaderStartRow, SafeAreaWidth) = pixel[White];
+			mat.at<Vec3b>(HeaderStartRow, SafeAreaWidth + 1) = pixel[White];
+			mat.at<Vec3b>(HeaderStartRow, SafeAreaWidth + 2) = pixel[White];
+			mat.at<Vec3b>(HeaderStartRow, SafeAreaWidth + 3) = pixel[White];
 			break;
 		default:
-			mat.at<Vec3b>(QrPointSize, SafeAreaWidth) = pixel[Black];
-			mat.at<Vec3b>(QrPointSize, SafeAreaWidth + 1) = pixel[Black];
-			mat.at<Vec3b>(QrPointSize, SafeAreaWidth + 2) = pixel[Black];
-			mat.at<Vec3b>(QrPointSize, SafeAreaWidth + 3) = pixel[Black];
+			mat.at<Vec3b>(HeaderStartRow, SafeAreaWidth) = pixel[Black];
+			mat.at<Vec3b>(HeaderStartRow, SafeAreaWidth + 1) = pixel[Black];
+			mat.at<Vec3b>(HeaderStartRow, SafeAreaWidth + 2) = pixel[Black];
+			mat.at<Vec3b>(HeaderStartRow, SafeAreaWidth + 3) = pixel[Black];
 			break;
 		}
 		for (int i = 4; i < 16; ++i)
 		{
-			mat.at<Vec3b>(QrPointSize, SafeAreaWidth + i) = pixel[(tailLen&1)?7:0];
+			mat.at<Vec3b>(HeaderStartRow, SafeAreaWidth + i) = pixel[(tailLen & 1) ? White : Black];
 			tailLen >>= 1;
 		}
-		/*for (int i = 4; i < 8; ++i)
-		{
-			mat.at<Vec3b>(QrPointSize, SafeAreaWidth + i) = pixel[tailLen & 7];
-			tailLen >>= 3;
-		}*/
 #ifdef Code_DEBUG
 		Show_Scale_Img(mat);
 #endif
 	}
-	Mat CodeFrame(FrameType frameType, const char* info, int tailLen,int FrameNo)
+
+	Mat CodeFrame(FrameType frameType, const char* info, int tailLen, int FrameNo)
 	{
-		Mat codeMat = Mat(FrameSize, FrameSize, CV_8UC3,Vec3d(255,255,255));
-		if (frameType != FrameType::End&&frameType!=FrameType::StartAndEnd) 
+		Mat codeMat(FrameSize, FrameSize, CV_8UC3, Vec3d(255, 255, 255));
+		if (frameType != FrameType::End && frameType != FrameType::StartAndEnd)
 			tailLen = BytesPerFrame;
 		BulidSafeArea(codeMat);
 		BulidQrPoint(codeMat);
-		
-		int checkCode=CalCheckCode((const unsigned char*)info, tailLen,
-									frameType==FrameType::Start|| frameType == FrameType::StartAndEnd,
-			                        frameType==FrameType::End|| frameType == FrameType::StartAndEnd,FrameNo);
+		fillDataNoise(codeMat);
+
+		const int checkCode = CalCheckCode(reinterpret_cast<const unsigned char*>(info), tailLen,
+			frameType == FrameType::Start || frameType == FrameType::StartAndEnd,
+			frameType == FrameType::End || frameType == FrameType::StartAndEnd,
+			FrameNo);
 		BulidFrameFlag(codeMat, frameType, tailLen);
 		BulidCheckCodeAndFrameNo(codeMat, checkCode, FrameNo % 65536);
-		if (tailLen != BytesPerFrame) 
-			tailLen = BytesPerFrame;
-		for (int i = 0; i < RectAreaCount&&tailLen>0; ++i)
+
+		int bytesToWrite = BytesPerFrame;
+		for (int i = 0; i < RectAreaCount && bytesToWrite > 0; ++i)
 		{
-			int lennow = std::min(tailLen, lenlim[i]);
-			BulidInfoRect(codeMat, info, lennow,i);
-			tailLen -= lennow;
+			const int lennow = std::min(bytesToWrite, getRegionCapacityBytes(kDataRegions[i]));
+			BulidInfoRect(codeMat, info, lennow, i);
+			bytesToWrite -= lennow;
 			info += lennow;
 		}
 		return codeMat;
 	}
-	void Main(const char* info, int len,const char * savePath,const char * outputFormat,int FrameCountLimit)
+
+	void Main(const char* info, int len, const char* savePath, const char* outputFormat, int FrameCountLimit)
 	{
 		Mat output;
 		char fileName[128];
 		int counter = 0;
-		if (FrameCountLimit == 0) return;
-		if (len <= 0);
-		else if (len <= BytesPerFrame)
+		if (FrameCountLimit == 0)
+			return;
+		if (len <= 0)
+			return;
+		if (len <= BytesPerFrame)
 		{
 			unsigned char BUF[BytesPerFrame + 5];
-			memcpy(BUF, info, sizeof(unsigned char) * len);
+			std::memcpy(BUF, info, sizeof(unsigned char) * len);
 			for (int i = len; i <= BytesPerFrame; ++i)
-				BUF[i] = rand() % 256;
-			output = ScaleToDisSize(CodeFrame(FrameType::StartAndEnd, (char*)BUF, len, 0));
-			sprintf_s(fileName, "%s\\%05d.%s", savePath, counter++, outputFormat);
+				BUF[i] = std::rand() % 256;
+			output = ScaleToDisSize(CodeFrame(FrameType::StartAndEnd, reinterpret_cast<char*>(BUF), len, 0));
+			std::snprintf(fileName, sizeof(fileName), "%s\\%05d.%s", savePath, counter++, outputFormat);
 			imwrite(fileName, output);
 		}
 		else
 		{
 			int i = 0;
 			len -= BytesPerFrame;
-			output= ScaleToDisSize(CodeFrame(FrameType::Start, info, len, 0));
+			output = ScaleToDisSize(CodeFrame(FrameType::Start, info, len, 0));
 			--FrameCountLimit;
-			
-			sprintf_s(fileName, "%s\\%05d.%s", savePath, counter++, outputFormat);
+
+			std::snprintf(fileName, sizeof(fileName), "%s\\%05d.%s", savePath, counter++, outputFormat);
 			imwrite(fileName, output);
 
 			while (len > 0 && FrameCountLimit > 0)
@@ -291,23 +356,23 @@ namespace Code
 				--FrameCountLimit;
 				if (len - BytesPerFrame > 0)
 				{
-					if (FrameCountLimit>0)
+					if (FrameCountLimit > 0)
 						output = ScaleToDisSize(CodeFrame(FrameType::Normal, info, BytesPerFrame, ++i));
-					else output = ScaleToDisSize(CodeFrame(FrameType::End, info, BytesPerFrame, ++i));
+					else
+						output = ScaleToDisSize(CodeFrame(FrameType::End, info, BytesPerFrame, ++i));
 				}
 				else
 				{
 					unsigned char BUF[BytesPerFrame + 5];
-					memcpy(BUF, info, sizeof(unsigned char) * len);
-					for (int i = len; i <= BytesPerFrame; ++i)
-						BUF[i] = rand() % 256;
-					output = ScaleToDisSize(CodeFrame(FrameType::End, (char*)BUF, len, ++i));
+					std::memcpy(BUF, info, sizeof(unsigned char) * len);
+					for (int j = len; j <= BytesPerFrame; ++j)
+						BUF[j] = std::rand() % 256;
+					output = ScaleToDisSize(CodeFrame(FrameType::End, reinterpret_cast<char*>(BUF), len, ++i));
 				}
 				len -= BytesPerFrame;
-				sprintf_s(fileName, "%s\\%05d.%s", savePath, counter++, outputFormat);
+				std::snprintf(fileName, sizeof(fileName), "%s\\%05d.%s", savePath, counter++, outputFormat);
 				imwrite(fileName, output);
-			};
+			}
 		}
-		return;
 	}
 }
