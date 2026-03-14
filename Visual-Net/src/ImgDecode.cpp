@@ -1,7 +1,14 @@
-//Õâ¸öÎÄ¼þ·â×°ÁË¶þÎ¬ÂëµÄ½âÂë
-#include"ImgDecode.h"
-#include"pic.h"
-#include"code.h"
+ï»¿// This file implements decoding for the logical code frame.
+#include "ImgDecode.h"
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <vector>
+
+#include "code.h"
+#include "pic.h"
+
 namespace ImageDecode
 {
 	enum color
@@ -9,126 +16,211 @@ namespace ImageDecode
 		Black = 0,
 		White = 7
 	};
-	const Vec3b pixel[8] =
-	{
-		Vec3b(0,0,0),Vec3b(0,0,255),Vec3b(0,255,0),Vec3b(0,255,255),
-		Vec3b(255,0,0),Vec3b(255,0,255),Vec3b(255,255,0), Vec3b(255,255,255)
-	};
-	//const int lenlim[RectAreaCount] = { 426,432,1944,432,432,48,24 };
-	const int lenlim[RectAreaCount] = { 138,144,648,144,144,16,8 };
-	const int areapos[RectAreaCount][2][2] = //[2][2],µÚÒ»Î¬¶È´ú±í¸ß¿í£¬µÚ¶þÎ¬¶È´ú±í×óÉÏ½Ç×ø±ê
-	{
-		{{69,16},{QrPointSize + 3,SafeAreaWidth}},
-		{{16,72},{SafeAreaWidth,QrPointSize}},
-		{{72,72},{QrPointSize,QrPointSize}},
-		{{72,16},{QrPointSize,FrameSize - QrPointSize}},
-		{{16,72},{FrameSize - QrPointSize,QrPointSize}},
-		{{8,16},{FrameSize - QrPointSize,FrameSize - QrPointSize}},
-		{{8,8},{FrameSize - QrPointSize + 8,FrameSize - QrPointSize}}
-	};
-	void GetcheckCodeAndFrameNo(const Mat& mat, uint16_t& checkcode, uint16_t& FrameNo)
-	{
-		//uint32_t outputCode = 0;//(checkcode << 8) | (FrameNo)
-		/*for (int i = 15; i >= 8; --i)
-		{
-			const auto& temp = mat.at<Vec3b>(QrPointSize, SafeAreaWidth + i);
-			int j;
-			for (j = 0; j < 7; ++j)
-				if (temp == pixel[j])
-					break;
-			outputCode <<= 3;
-			outputCode |= j;
-		}*/
-		for (int i = 15; i >= 0; --i)
-		{
-			const auto& temp = mat.at<Vec3b>(QrPointSize + 1, SafeAreaWidth + i);
-			checkcode <<= 1;
-			checkcode |= ((temp==pixel[0])?0:1);
-		}
-		for (int i = 15; i >= 0; --i)
-		{
-			const auto& temp = mat.at<Vec3b>(QrPointSize + 2, SafeAreaWidth + i);
-			FrameNo <<= 1;
-			FrameNo |= ((temp == pixel[0]) ? 0 : 1);
-		}
-		//checkcode = outputCode >> 8;
-		//FrameNo = outputCode & 255;
-	}
-	void GetInfoRect(const Mat& mat, unsigned char* info, int len, int areaID)
-	{
-		unsigned char* pos = info;
-		const unsigned char* end = pos + len;
-		for (int i = 0; i < areapos[areaID][0][0]; ++i)
-		{
-			uint32_t outputCode = 0;
-			for (int j = 0; j < areapos[areaID][0][1] / 8; ++j)
-			{
 
-				for (int k = areapos[areaID][1][1] + 7; k >= areapos[areaID][1][1]; --k)
-				{
-					const auto& temp = mat.at<Vec3b>(i + areapos[areaID][1][0], j * 8 + k);
-					int l;
-					/*for (l = 0;l < 7; ++l)
-						if (temp == pixel[l])
-							break;
-					outputCode <<= 3;
-					outputCode |= l;*/
-					outputCode <<= 1;
-					outputCode |= ((temp == pixel[0])?0:1);
-				}
-				*(pos) = outputCode;
-				/*for (int k = 2; k >= 0; --k)
-				{
-					if (pos + k < end)
-						*(pos + k) = outputCode & 255;
-					outputCode >>= 8;
-				}*/
-				//pos += 3;
-				++pos;
-				if (pos == end) break;
+	struct DataArea
+	{
+		int top;
+		int left;
+		int height;
+		int width;
+		int trimRight;
+	};
+
+	struct CellPos
+	{
+		int row;
+		int col;
+	};
+
+	enum class FrameType
+	{
+		Start = 0,
+		End = 1,
+		StartAndEnd = 2,
+		Normal = 3
+	};
+
+	constexpr int SmallQrPointRadius = 3;
+	constexpr int CornerReserveSize = 21;
+	constexpr int HeaderLeft = 21;
+	constexpr int HeaderTop = 3;
+	constexpr int HeaderFieldBits = 16;
+	constexpr int HeaderWidth = 16;
+	constexpr int TopDataLeft = HeaderLeft + HeaderWidth;
+	constexpr int TopDataWidth = 75;
+	constexpr int DataAreaCount = 5;
+	constexpr int PaddingCellCount = 4;
+
+	const std::array<DataArea, DataAreaCount> kDataAreas =
+	{{
+		{3, TopDataLeft, 3, TopDataWidth, 0},
+		{6, 21, 15, 91, 0},
+		{21, 3, 88, 127, 0},
+		{109, 3, 3, 127, 0},
+		{112, 21, 18, 91, 0}
+	}};
+
+	bool isWhiteCell(const Vec3b& cell)
+	{
+		return cell[0] + cell[1] + cell[2] >= 384;
+	}
+
+	bool isInsideCornerQuietZone(int row, int col)
+	{
+		return row >= 130 || col >= 130;
+	}
+
+	bool isInsideCornerSafetyZone(int row, int col)
+	{
+		const int center = FrameSize - SmallQrPointbias;
+		return std::abs(row - center) <= SmallQrPointRadius + 2 && std::abs(col - center) <= SmallQrPointRadius + 2;
+	}
+
+	std::vector<CellPos> buildAreaCells(const DataArea& area)
+	{
+		std::vector<CellPos> cells;
+		for (int row = area.top; row < area.top + area.height; ++row)
+		{
+			const int rowWidth = area.width - area.trimRight;
+			for (int col = area.left; col < area.left + rowWidth; ++col)
+			{
+				cells.push_back({ row, col });
 			}
-			if (pos == end) break;
+		}
+		return cells;
+	}
+
+	std::vector<CellPos> buildCornerDataCells()
+	{
+		std::vector<CellPos> cells;
+		for (int row = FrameSize - CornerReserveSize; row < FrameSize; ++row)
+		{
+			for (int col = FrameSize - CornerReserveSize; col < FrameSize; ++col)
+			{
+				if (isInsideCornerQuietZone(row, col))
+				{
+					continue;
+				}
+				if (isInsideCornerSafetyZone(row, col))
+				{
+					continue;
+				}
+				cells.push_back({ row, col });
+			}
+		}
+		return cells;
+	}
+
+	std::vector<CellPos> buildMergedDataCells()
+	{
+		std::vector<CellPos> cells;
+		for (const auto& area : kDataAreas)
+		{
+			const auto areaCells = buildAreaCells(area);
+			cells.insert(cells.end(), areaCells.begin(), areaCells.end());
+		}
+		const auto cornerCells = buildCornerDataCells();
+		cells.insert(cells.end(), cornerCells.begin(), cornerCells.end());
+		if (cells.size() > PaddingCellCount)
+		{
+			cells.resize(cells.size() - PaddingCellCount);
+		}
+		return cells;
+	}
+
+	uint16_t readHeaderField(const Mat& mat, int fieldId)
+	{
+		uint16_t value = 0;
+		const int row = HeaderTop + fieldId;
+		for (int bit = 0; bit < HeaderFieldBits; ++bit)
+		{
+			if (isWhiteCell(mat.at<Vec3b>(row, HeaderLeft + bit)))
+			{
+				value |= static_cast<uint16_t>(1u << bit);
+			}
+		}
+		return value;
+	}
+
+	FrameType parseFrameType(uint16_t headerValue, bool& isStart, bool& isEnd)
+	{
+		const uint16_t flagBits = headerValue & 0xF;
+		switch (flagBits)
+		{
+		case 0b0011:
+			isStart = true;
+			isEnd = false;
+			return FrameType::Start;
+		case 0b1100:
+			isStart = false;
+			isEnd = true;
+			return FrameType::End;
+		case 0b1111:
+			isStart = true;
+			isEnd = true;
+			return FrameType::StartAndEnd;
+		default:
+			isStart = false;
+			isEnd = false;
+			return FrameType::Normal;
 		}
 	}
-	void GetFrameFlag(const Mat& mat, int& tailLen, bool& start, bool& end)
+
+	void readPayload(const Mat& mat, std::vector<unsigned char>& info)
 	{
-		tailLen = 0;
-		start = (mat.at<Vec3b>(QrPointSize, SafeAreaWidth) == pixel[White]);
-		end = (mat.at<Vec3b>(QrPointSize, SafeAreaWidth + 2) == pixel[White]);
-		/*for (int i = 7; i >= 4; --i)
+		const auto cells = buildMergedDataCells();
+		info.assign(BytesPerFrame, 0);
+		for (int bitIndex = 0; bitIndex < BytesPerFrame * 8 && bitIndex < static_cast<int>(cells.size()); ++bitIndex)
 		{
-			const auto& temp = mat.at<Vec3b>(QrPointSize, SafeAreaWidth + i);
-			int j;
-			for (j = 0; j < 7; ++j)
-				if (temp == pixel[j])
-					break;
-			tailLen <<= 3;
-			tailLen |= j;
-		}*/
-		for (int i = 15; i >= 4; --i)
-		{
-			const auto& temp = mat.at<Vec3b>(QrPointSize, SafeAreaWidth + i);
-			tailLen <<= 1;
-			tailLen |= ((temp== pixel[0])?0:1);
+			if (isWhiteCell(mat.at<Vec3b>(cells[bitIndex].row, cells[bitIndex].col)))
+			{
+				const int byteIndex = bitIndex / 8;
+				const int offset = bitIndex % 8;
+				info[byteIndex] |= static_cast<unsigned char>(1u << offset);
+			}
 		}
 	}
-	bool Main(Mat& mat,ImageInfo& imageInfo)
+
+	bool hasLegalSize(const Mat& mat)
 	{
-		int tailLen = 1242,codeLen=0;
-		GetFrameFlag(mat, codeLen,imageInfo.IsStart,imageInfo.IsEnd);
-		if (codeLen < 0) return 1;
-		if (imageInfo.IsEnd == 1) tailLen = std::min(tailLen,1242);
-		GetcheckCodeAndFrameNo(mat, imageInfo.CheckCode, imageInfo.FrameBase);
-		imageInfo.Info = vector<unsigned char>(tailLen);
-		unsigned char* info = imageInfo.Info.data();
-		for (int i = 0; i < RectAreaCount && tailLen>0; ++i)
+		return mat.rows == FrameSize && mat.cols == FrameSize && mat.type() == CV_8UC3;
+	}
+
+	bool Main(Mat& mat, ImageInfo& imageInfo)
+	{
+		imageInfo.Info.clear();
+		imageInfo.CheckCode = 0;
+		imageInfo.FrameBase = 0;
+		imageInfo.IsStart = false;
+		imageInfo.IsEnd = false;
+
+		if (!hasLegalSize(mat))
 		{
-			int lennow = std::min(tailLen, lenlim[i]);
-			GetInfoRect(mat, info, lennow, i);
-			tailLen -= lennow;
-			info += lennow;
+			return true;
 		}
-		while (imageInfo.Info.size() > codeLen) imageInfo.Info.pop_back();
-		return imageInfo.CheckCode != Code::CalCheckCode(imageInfo.Info.data(), codeLen,imageInfo.IsStart, imageInfo.IsEnd,imageInfo.FrameBase);
+
+		const uint16_t headerValue = readHeaderField(mat, 0);
+		parseFrameType(headerValue, imageInfo.IsStart, imageInfo.IsEnd);
+		const int codeLen = headerValue >> 4;
+		if (codeLen > BytesPerFrame)
+		{
+			return true;
+		}
+
+		imageInfo.CheckCode = readHeaderField(mat, 1);
+		imageInfo.FrameBase = readHeaderField(mat, 2);
+
+		std::vector<unsigned char> payload;
+		readPayload(mat, payload);
+		payload.resize(codeLen);
+		imageInfo.Info.swap(payload);
+
+		return imageInfo.CheckCode != Code::CalCheckCode(
+			imageInfo.Info.data(),
+			codeLen,
+			imageInfo.IsStart,
+			imageInfo.IsEnd,
+			imageInfo.FrameBase
+		);
 	}
 }

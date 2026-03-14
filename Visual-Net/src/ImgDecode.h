@@ -1,14 +1,18 @@
-#pragma once
-#include<opencv2/opencv.hpp>
+﻿#pragma once
+
+#include <opencv2/opencv.hpp>
+
 #define Show_Img(src) do\
 {\
 	cv::imshow("src", src);\
 	cv::waitKey();\
 }while (0);
+
 namespace ImageDecode
 {
 	using namespace std;
 	using namespace cv;
+
 	struct ImageInfo
 	{
 		vector<unsigned char> Info;
@@ -17,12 +21,13 @@ namespace ImageDecode
 		bool IsStart;
 		bool IsEnd;
 	};
-	constexpr int BytesPerFrame = 3738;
-	constexpr int FrameSize = 108;
-	constexpr int FrameOutputRate = 10;
+
+	constexpr int BytesPerFrame = 1878;
+	constexpr int FrameSize = 133;
+	constexpr int FrameOutputRate = 8;
 	constexpr int SafeAreaWidth = 2;
-	constexpr int QrPointSize = 18;
-	constexpr int SmallQrPointbias = 6;
-	constexpr int RectAreaCount = 7;
-	bool Main(Mat & mat,ImageInfo &imageInfo);
+	constexpr int QrPointSize = 21;
+	constexpr int SmallQrPointbias = 7;
+
+	bool Main(Mat& mat, ImageInfo& imageInfo);
 }
