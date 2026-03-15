@@ -172,3 +172,153 @@ fc /b ..\README.md .\decoded_readme.md
 测试文档中可使用如下表述：
 
 > 本次对 `Visual-Net` 的编解码模块进行了修改，主要涉及 `code`、`ImgDecode` 和 `pic` 相关实现；`ffmpeg` 部分继续沿用原项目版本。测试时需先进入 `Visual-Net` 目录，并在 `Visual-Net/bin` 下执行编码与解码程序，按“编码 -> 解码 -> 文件一致性比对”的流程完成验证。
+>
+> ## 9. FFmpeg 功能模块说明
+
+### 9.1 功能概述
+
+本次开发中，对 `ffmpeg` 模块进行了封装和扩展，提供了更灵活的音视频处理功能，主要包括：
+
+- 视频转图片（支持自定义输出分辨率）
+- 图片转视频（支持自定义帧率和码率）
+- 图片缩放（支持任意尺寸调整）
+
+### 9.2 函数接口
+
+#### 9.2.1 视频转图片
+
+```cpp
+int VideotoImage(const char* videoPath,     // 输入视频路径
+                 const char* imagePath,     // 输出图片目录
+                 const char* imageFormat,   // 图片格式（如 "jpg", "png"）
+                 int width = -1,            // 输出宽度（-1 表示保持原始宽度）
+                 int height = -1);          // 输出高度（-1 表示保持原始高度）
+```
+
+**功能**：将视频文件拆分为一系列图片，可选择调整输出图片的分辨率。
+
+**参数说明**：
+- `videoPath`：输入视频文件的路径（支持相对路径和绝对路径）
+- `imagePath`：输出图片的目录路径，若不存在会自动创建
+- `imageFormat`：输出图片的格式，如 "jpg"、"png" 等
+- `width`：输出图片的宽度，-1 表示保持原始宽度
+- `height`：输出图片的高度，-1 表示保持原始高度
+
+**返回值**：0 表示成功，非 0 表示失败。
+
+#### 9.2.2 图片转视频
+
+```cpp
+int ImagetoVideo(const char* imagePath,     // 输入图片目录
+                 const char* imageFormat,   // 图片格式（如 "jpg", "png"）
+                 const char* videoPath,     // 输出视频路径
+                 unsigned rawFrameRates = 30,       // 输入图片序列的帧率
+                 unsigned outputFrameRates = 30,    // 输出视频的帧率
+                 unsigned kbps = 0);                // 输出视频码率（0 表示自动）
+```
+
+**功能**：将一系列按序号命名的图片合成为视频文件。
+
+**参数说明**：
+- `imagePath`：包含按序号命名图片的目录路径
+- `imageFormat`：图片的格式，如 "jpg"、"png" 等
+- `videoPath`：输出视频文件的路径
+- `rawFrameRates`：输入图片序列的帧率，默认为 30
+- `outputFrameRates`：输出视频的帧率，默认为 30
+- `kbps`：输出视频的码率（单位：kbps），0 表示自动
+
+**返回值**：0 表示成功，非 0 表示失败。
+
+#### 9.2.3 图片缩放
+
+```cpp
+int ScaleImage(const char* inputPath,   // 输入图片路径
+               const char* outputPath,  // 输出图片路径
+               int width,               // 目标宽度
+               int height);             // 目标高度
+```
+
+**功能**：调整图片的尺寸，保持原始宽高比并进行适当填充。
+
+**参数说明**：
+- `inputPath`：输入图片的路径
+- `outputPath`：输出图片的路径
+- `width`：目标宽度
+- `height`：目标高度
+
+**返回值**：0 表示成功，非 0 表示失败。
+
+### 9.3 调用流程
+
+#### 9.3.1 基本调用示例
+
+```cpp
+// 1. 视频转图片（保持原始分辨率）
+FFMPEG::VideotoImage("input.mp4", "output_frames", "jpg");
+
+// 2. 视频转图片（调整为 1064x1064）
+FFMPEG::VideotoImage("input.mp4", "output_frames_1064x1064", "jpg", 1064, 1064);
+
+// 3. 图片转视频
+FFMPEG::ImagetoVideo("input_frames", "jpg", "output.mp4", 30, 30, 2000);
+
+// 4. 图片缩放
+FFMPEG::ScaleImage("input.jpg", "output_800x600.jpg", 800, 600);
+```
+
+#### 9.3.2 路径设置
+
+FFmpeg 可执行文件的路径可通过以下函数设置：
+
+```cpp
+// 设置 ffmpeg 可执行文件的路径
+FFMPEG::SetFfmpegPath("path/to/ffmpeg/bin/");
+
+// 获取当前 ffmpeg 路径
+const char* path = FFMPEG::GetFfmpegPath();
+```
+
+默认路径为 `ffmpeg\bin\`，与程序运行目录相对。
+
+### 9.4 完成的工作
+
+1. **函数封装**：将 FFmpeg 命令行操作封装为简单易用的 C++ 函数接口
+
+2. **功能扩展**：
+   - 为 `VideotoImage` 函数添加了分辨率调整功能
+   - 保持了原有函数的向后兼容性（默认参数）
+
+3. **路径灵活性**：
+   - 支持相对路径和绝对路径
+   - 自动创建输出目录
+   - 可通过 `SetFfmpegPath` 函数自定义 FFmpeg 可执行文件的路径
+
+4. **测试验证**：
+   - 验证了视频转图片功能（支持分辨率调整）
+   - 验证了图片转视频功能
+   - 验证了图片缩放功能
+   - 确保与学长的 FFmpeg 可执行文件完全兼容
+
+5. **代码质量**：
+   - 代码结构清晰，易于理解和维护
+   - 提供了详细的函数文档和参数说明
+   - 错误处理机制完善
+
+### 9.5 测试建议
+
+在使用 FFmpeg 功能模块时，建议：
+
+1. **运行目录**：在 `Visual-Net/bin` 目录下执行程序，确保 FFmpeg 路径正确
+
+2. **路径设置**：
+   - 使用相对路径时，相对于程序运行目录
+   - 使用绝对路径时，确保路径格式正确（Windows 下使用反斜杠 `\`）
+
+3. **性能考虑**：
+   - 调整分辨率会增加处理时间
+   - 处理大量图片或高分辨率视频时，建议适当调整参数以平衡质量和速度
+
+4. **错误处理**：
+   - 检查函数返回值以判断操作是否成功
+   - 若失败，可查看控制台输出的 FFmpeg 错误信息
+
