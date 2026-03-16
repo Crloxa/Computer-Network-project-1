@@ -212,6 +212,7 @@ namespace ImageDecode
 
 		std::vector<unsigned char> payload;
 		readPayload(mat, payload);
+		Code::WhitenPayload(payload.data(), BytesPerFrame, imageInfo.FrameBase);
 		payload.resize(codeLen);
 		imageInfo.Info.swap(payload);
 

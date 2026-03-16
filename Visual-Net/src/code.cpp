@@ -302,20 +302,57 @@ namespace Code
 
 	uint16_t CalCheckCode(const unsigned char* info, int len, bool isStart, bool isEnd, uint16_t frameBase)
 	{
-		uint16_t ans = 0;
-		const int cutlen = (len / 2) * 2;
-		for (int i = 0; i < cutlen; i += 2)
+		uint16_t crc = 0xFFFF;
+		auto update = [&](uint8_t data)
 		{
-			ans ^= (static_cast<uint16_t>(info[i]) << 8) | info[i + 1];
-		}
-		if (len & 1)
+			crc ^= static_cast<uint16_t>(data) << 8;
+			for (int i = 0; i < 8; ++i)
+			{
+				if (crc & 0x8000)
+				{
+					crc = static_cast<uint16_t>((crc << 1) ^ 0x1021);
+				}
+				else
+				{
+					crc = static_cast<uint16_t>(crc << 1);
+				}
+			}
+		};
+
+		for (int i = 0; i < len; ++i)
 		{
-			ans ^= static_cast<uint16_t>(info[cutlen]) << 8;
+			update(static_cast<uint8_t>(info[i]));
 		}
-		ans ^= len;
-		ans ^= frameBase;
-		ans ^= static_cast<uint16_t>((isStart << 1) + isEnd);
-		return ans;
+
+		update(static_cast<uint8_t>((len >> 8) & 0xFF));
+		update(static_cast<uint8_t>(len & 0xFF));
+		update(static_cast<uint8_t>((frameBase >> 8) & 0xFF));
+		update(static_cast<uint8_t>(frameBase & 0xFF));
+		update(static_cast<uint8_t>((isStart << 1) | isEnd));
+
+		return crc;
+	}
+
+	void WhitenPayload(unsigned char* data, int len, uint16_t frameBase)
+	{
+		if (data == nullptr || len <= 0)
+		{
+			return;
+		}
+
+		uint32_t state = 0x9E3779B9u ^ (static_cast<uint32_t>(frameBase) << 16) ^ 0x85EBCA6Bu;
+		auto nextByte = [&]() -> unsigned char
+		{
+			state ^= state << 13;
+			state ^= state >> 17;
+			state ^= state << 5;
+			return static_cast<unsigned char>(state & 0xFFu);
+		};
+
+		for (int i = 0; i < len; ++i)
+		{
+			data[i] ^= nextByte();
+		}
 	}
 
 	void BulidSafeArea(Mat& mat)
@@ -478,7 +515,10 @@ namespace Code
 		BulidCheckCodeAndFrameNo(codeMat, checkCode, FrameNo % 65536);
 
 		const auto mergedCells = buildMergedDataCells();
-		writeBytesToCells(codeMat, reinterpret_cast<const unsigned char*>(info), BytesPerFrame, mergedCells);
+		std::vector<unsigned char> whitenedPayload(BytesPerFrame, 0);
+		std::memcpy(whitenedPayload.data(), info, BytesPerFrame);
+		WhitenPayload(whitenedPayload.data(), BytesPerFrame, static_cast<uint16_t>(FrameNo % 65536));
+		writeBytesToCells(codeMat, whitenedPayload.data(), BytesPerFrame, mergedCells);
 		return codeMat;
 	}
 

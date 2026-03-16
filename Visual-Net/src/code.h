@@ -9,6 +9,7 @@ namespace Code
 	using namespace std;
 	enum class FrameType;
 	uint16_t CalCheckCode(const unsigned char* info, int len, bool isStart, bool isEnd, uint16_t frameBase);
+	void WhitenPayload(unsigned char* data, int len, uint16_t frameBase);
 	void BulidSafeArea(Mat& mat);
 	void BulidQrPoint(Mat& mat);
 	void BulidCheckCodeAndFrameNo(Mat& mat, uint16_t checkcode, uint16_t FrameNo);
