@@ -43,6 +43,13 @@ set(TEST_COMMON_SOURCES
     src/pic.cpp
 )
 
+set(WITHOUT_PIC_SRC_FILES
+    src/main_without_pic.cpp
+    src/code.cpp
+    src/ffmpeg.cpp
+    src/ImgDecode.cpp
+)
+
 add_executable(textcode
     src/textcode.cpp
     ${TEST_COMMON_SOURCES}
@@ -52,6 +59,12 @@ add_executable(textdecode
     src/textdecode.cpp
     ${TEST_COMMON_SOURCES}
 )
+
+add_executable(encoder_without_pic ${WITHOUT_PIC_SRC_FILES})
+target_compile_definitions(encoder_without_pic PRIVATE BUILD_ENCODER=1)
+
+add_executable(decoder_without_pic ${WITHOUT_PIC_SRC_FILES})
+target_compile_definitions(decoder_without_pic PRIVATE BUILD_DECODER=1)
 
 # 关键：只链接 world 库
 target_link_libraries(encoder PRIVATE
@@ -74,6 +87,16 @@ target_link_libraries(textdecode PRIVATE
     $<$<CONFIG:Release>:opencv_world4120.lib>
 )
 
+target_link_libraries(encoder_without_pic PRIVATE
+    $<$<CONFIG:Debug>:opencv_world4120d.lib>
+    $<$<CONFIG:Release>:opencv_world4120.lib>
+)
+
+target_link_libraries(decoder_without_pic PRIVATE
+    $<$<CONFIG:Debug>:opencv_world4120d.lib>
+    $<$<CONFIG:Release>:opencv_world4120.lib>
+)
+
 # 复制依赖到 bin（含 opencv dll）
 add_custom_target(copy_deps ALL
     COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_SOURCE_DIR}/bin
@@ -86,3 +109,5 @@ add_dependencies(encoder copy_deps)
 add_dependencies(decoder copy_deps)
 add_dependencies(textcode copy_deps)
 add_dependencies(textdecode copy_deps)
+add_dependencies(encoder_without_pic copy_deps)
+add_dependencies(decoder_without_pic copy_deps)
