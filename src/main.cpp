@@ -1,199 +1,130 @@
-#include "encoder.h"
+#include"pic.h"
+#include"code.h"
+#include"ffmpeg.h"
+#include"ImgDecode.h"
+#include"thread"
 
-#include <exception>
-#include <filesystem>
-#include <iostream>
-#include <sstream>
-#include <string>
-#include <vector>
-
-namespace {
-
-constexpr char kCurrentProtocol[] = "V1.6-108-4F";
-
-void PrintUsage(const char* program_name) {
-    std::cout << "Usage:\n"
-              << "  " << program_name << " --help\n"
-              << "  " << program_name << " --version\n"
-              << "  " << program_name << " samples <output_dir>\n"
-              << "  " << program_name << " demo <input_file> <output_dir> [--fps n] [--repeat n]\n"
-              << "  " << program_name << " encode <input_file> <output_dir> [--fps n] [--repeat n]\n"
-              << "  " << program_name << " decode <input_video_or_frame_dir> <output_dir>\n\n"
-              << "Commands:\n"
-              << "  samples  Write V1.6-108-4F sample images and layout guide for effect preview.\n"
-              << "  demo     Alias of encode; keeps the historical demo entry for effect generation.\n"
-              << "  encode   Encode a file into V1.6-108-4F frames and demo.mp4.\n"
-              << "  decode   Self-check helper for repository-generated V1.6 frames or demo.mp4.\n";
+#define Show_Img(src) do\
+{\
+	cv::imshow("DEBUG", src);\
+	cv::waitKey();\
+}while (0);
+//ͼƬת��Ƶ
+int FileToVideo(const char* filePath, const char* videoPath, int timLim = INT_MAX, int fps = 15)
+{
+	FILE* fp = fopen(filePath, "rb");
+	if (fp == nullptr) return 1;
+	fseek(fp, 0, SEEK_END);
+	int size = ftell(fp);
+	rewind(fp);
+	char* temp = (char*)malloc(sizeof(char) * size);
+	if (temp == nullptr) return 1;
+	fread(temp, 1, size, fp);
+	fclose(fp);
+	system("md outputImg");
+	Code::Main(temp, size, "outputImg", "png", 1LL * fps * timLim / 1000);
+	FFMPEG::ImagetoVideo("outputImg", "png", videoPath, fps, 60, 100000);
+	system("rd /s /q outputImg");
+	free(temp);
+	return 0;
 }
+//��ƵתͼƬ
+int VideoToFile(const char* videoPath, const char* filePath)
+{
+	char imgName[256];
+	system("rd /s /q inputImg");
+	system("md inputImg");
+	bool isThreadOver = false;
+	std::thread th([&] {FFMPEG::VideotoImage(videoPath, "inputImg", "jpg"); isThreadOver = true; });
+	int precode = -1;
+	std::vector<unsigned char> outputFile;
+	bool hasStarted = 0;
+	bool ret = 0;
+	for (int i = 1;; ++i, system((std::string("del ") + imgName).c_str()))
+	{
+		printf("Reading Image %05d.jpg\n", i);
+		snprintf(imgName, 256, "inputImg\\%05d.jpg", i);
+		FILE* fp;
+		do
+		{
+			fp = fopen(imgName, "rb");
+		} while (fp == nullptr && !isThreadOver);
 
-void PrintVersion() {
-    std::cout << "Project1 protocol=" << kCurrentProtocol << std::endl;
+		if (fp == nullptr)
+		{
+			puts("failed to open the video, is the video Incomplete?");
+			ret = 1;
+			break;
+		}
+		cv::Mat srcImg = cv::imread(imgName, 1), disImg;
+		fclose(fp);
+
+		if (ImgParse::Main(srcImg, disImg))
+		{
+			continue;
+		}
+		//Show_Img(disImg);
+		ImageDecode::ImageInfo imageInfo;
+		bool ans = ImageDecode::Main(disImg, imageInfo);
+		if (ans)
+		{
+			continue;
+		}
+		if (!hasStarted)
+		{
+			if (imageInfo.IsStart)
+				hasStarted = 1;
+			else continue;
+		}
+		if (precode == imageInfo.FrameBase)
+			continue;
+		if (((precode + 1) & UINT16_MAX) != imageInfo.FrameBase)
+		{
+			puts("error, there is a skipped frame,there are some images parsed failed.");
+			ret = 1;
+			break;
+		}
+		printf("Frame %d is parsed!\n", imageInfo.FrameBase);
+
+		precode = (precode + 1) & UINT16_MAX;
+		for (auto& e : imageInfo.Info)
+			outputFile.push_back(e);
+
+		if (imageInfo.IsEnd)
+			break;
+	}
+	if (ret == 0)
+	{
+		th.join();
+		printf("\nVideo Parse is success.\nFile Size:%lldB\nTotal Frame:%d\n", outputFile.size(), precode);
+		FILE* fp = fopen(filePath, "wb");
+		if (fp == nullptr) return 1;
+		outputFile.push_back('\0');
+		fwrite(outputFile.data(), sizeof(unsigned char), outputFile.size() - 1, fp);
+		fclose(fp);
+		return ret;
+	}
+	exit(1);
 }
-
-bool IsLegacyOption(const std::string& argument) {
-    return argument == "--profile" ||
-           argument == "--ecc" ||
-           argument == "--canvas" ||
-           argument == "--markers" ||
-           argument == "--protocol-samples" ||
-           argument == "--decode-debug";
-}
-
-void PrintCompatibilityWarning(const std::vector<std::string>& ignored_options) {
-    if (ignored_options.empty()) {
-        return;
-    }
-
-    std::ostringstream stream;
-    for (std::size_t index = 0; index < ignored_options.size(); ++index) {
-        if (index > 0U) {
-            stream << ", ";
-        }
-        stream << ignored_options[index];
-    }
-
-    std::cerr << "[compat] 当前默认主线已切到 " << kCurrentProtocol
-              << "，以下历史 ISO 参数已被忽略: " << stream.str() << '\n'
-              << "[compat] 当前仅实际使用 --fps 和 --repeat。Windows PowerShell 推荐命令: "
-              << ".\\x64\\Debug\\Project1.exe encode input.jpg out\\encode\\input"
-              << std::endl;
-}
-
-bool ParseOptions(int argc,
-                  char* argv[],
-                  int option_start,
-                  protocol_v1::EncoderOptions* options,
-                  std::vector<std::string>* ignored_legacy_options,
-                  std::string* error) {
-    for (int index = option_start; index < argc; ++index) {
-        const std::string argument = argv[index];
-        if (argument == "--fps") {
-            if (index + 1 >= argc) {
-                *error = "--fps requires a value.";
-                return false;
-            }
-            options->fps = std::stoi(argv[++index]);
-        } else if (argument == "--repeat") {
-            if (index + 1 >= argc) {
-                *error = "--repeat requires a value.";
-                return false;
-            }
-            options->repeat = std::stoi(argv[++index]);
-        } else if (IsLegacyOption(argument)) {
-            if (index + 1 >= argc) {
-                *error = argument + " requires a value.";
-                return false;
-            }
-            const std::string value = argv[++index];
-            if (ignored_legacy_options != nullptr) {
-                ignored_legacy_options->push_back(argument + "=" + value);
-            }
-        } else {
-            *error = "Unknown option: " + argument;
-            return false;
-        }
-    }
-
-    if (options->fps <= 0 || options->repeat <= 0) {
-        *error = "--fps and --repeat must be positive.";
-        return false;
-    }
-    return true;
-}
-
-int RunSamples(const std::filesystem::path& output_dir, const protocol_v1::EncoderOptions& options) {
-    std::string error_message;
-    if (!demo_encoder::WriteV1Samples(output_dir, options, &error_message)) {
-        std::cerr << error_message << std::endl;
-        return 1;
-    }
-    std::cout << "V1.6 samples written to: " << output_dir << std::endl;
-    return 0;
-}
-
-int RunEncode(const std::filesystem::path& input_path,
-              const std::filesystem::path& output_dir,
-              const protocol_v1::EncoderOptions& options) {
-    std::string error_message;
-    if (!demo_encoder::WriteV1Package(input_path, output_dir, options, &error_message)) {
-        std::cerr << error_message << std::endl;
-        return 1;
-    }
-    std::cout << "V1.6 package written to: " << output_dir << std::endl;
-    return 0;
-}
-
-int RunDecode(const std::filesystem::path& input_path,
-              const std::filesystem::path& output_dir,
-              const protocol_v1::EncoderOptions& options) {
-    std::string error_message;
-    if (!demo_encoder::DecodeV1Package(input_path, output_dir, options, &error_message)) {
-        std::cerr << error_message << std::endl;
-        return 1;
-    }
-    std::cout << "V1.6 decode output written to: " << output_dir << std::endl;
-    return 0;
-}
-
-}  // namespace
-
-int main(int argc, char* argv[]) {
-    try {
-        if (argc == 2) {
-            const std::string single_argument = argv[1];
-            if (single_argument == "--help" || single_argument == "-h" || single_argument == "help") {
-                PrintUsage(argv[0]);
-                return 0;
-            }
-            if (single_argument == "--version" || single_argument == "-v") {
-                PrintVersion();
-                return 0;
-            }
-        }
-
-        if (argc < 3) {
-            PrintUsage(argv[0]);
-            return 1;
-        }
-
-        protocol_v1::EncoderOptions options;
-        std::vector<std::string> ignored_legacy_options;
-        std::string parse_error;
-        const std::string command = argv[1];
-        if (command == "samples") {
-            if (!ParseOptions(argc, argv, 3, &options, &ignored_legacy_options, &parse_error)) {
-                std::cerr << parse_error << std::endl;
-                return 1;
-            }
-            PrintVersion();
-            PrintCompatibilityWarning(ignored_legacy_options);
-            return RunSamples(argv[2], options);
-        }
-
-        if ((command == "encode" || command == "demo") && argc >= 4) {
-            if (!ParseOptions(argc, argv, 4, &options, &ignored_legacy_options, &parse_error)) {
-                std::cerr << parse_error << std::endl;
-                return 1;
-            }
-            PrintVersion();
-            PrintCompatibilityWarning(ignored_legacy_options);
-            return RunEncode(argv[2], argv[3], options);
-        }
-
-        if (command == "decode" && argc >= 4) {
-            if (!ParseOptions(argc, argv, 4, &options, &ignored_legacy_options, &parse_error)) {
-                std::cerr << parse_error << std::endl;
-                return 1;
-            }
-            PrintVersion();
-            PrintCompatibilityWarning(ignored_legacy_options);
-            return RunDecode(argv[2], argv[3], options);
-        }
-
-        PrintUsage(argv[0]);
-        return 1;
-    } catch (const std::exception& error) {
-        std::cerr << "Fatal error: " << error.what() << std::endl;
-        return 1;
-    }
+int main(int argc, char* argv[])
+{
+#ifdef BUILD_ENCODER
+	constexpr bool type = true;
+#else
+	constexpr bool type = false;
+#endif
+	if constexpr (type)
+	{
+		if (argc == 4)
+			return FileToVideo(argv[1], argv[2], std::stoi(argv[3]));
+		else if (argc == 5)
+			return FileToVideo(argv[1], argv[2], std::stoi(argv[3]), std::stoi(argv[4]));
+	}
+	else
+	{
+		if (argc == 3)
+			return VideoToFile(argv[1], argv[2]);
+	}
+	puts("argument error,please check your argument");
+	return 1;
 }
