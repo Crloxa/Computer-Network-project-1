@@ -6,6 +6,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # 统一输出到 bin
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/bin)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/bin)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${CMAKE_SOURCE_DIR}/bin)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL ${CMAKE_SOURCE_DIR}/bin)
 
 set(SRC_FILES
     src/main.cpp
@@ -32,6 +36,23 @@ target_compile_definitions(encoder PRIVATE BUILD_ENCODER=1)
 add_executable(decoder ${SRC_FILES})
 target_compile_definitions(decoder PRIVATE BUILD_DECODER=1)
 
+set(TEST_COMMON_SOURCES
+    src/code.cpp
+    src/ffmpeg.cpp
+    src/ImgDecode.cpp
+    src/pic.cpp
+)
+
+add_executable(textcode
+    src/textcode.cpp
+    ${TEST_COMMON_SOURCES}
+)
+
+add_executable(textdecode
+    src/textdecode.cpp
+    ${TEST_COMMON_SOURCES}
+)
+
 # 关键：只链接 world 库
 target_link_libraries(encoder PRIVATE
     $<$<CONFIG:Debug>:opencv_world4120d.lib>
@@ -39,6 +60,16 @@ target_link_libraries(encoder PRIVATE
 )
 
 target_link_libraries(decoder PRIVATE
+    $<$<CONFIG:Debug>:opencv_world4120d.lib>
+    $<$<CONFIG:Release>:opencv_world4120.lib>
+)
+
+target_link_libraries(textcode PRIVATE
+    $<$<CONFIG:Debug>:opencv_world4120d.lib>
+    $<$<CONFIG:Release>:opencv_world4120.lib>
+)
+
+target_link_libraries(textdecode PRIVATE
     $<$<CONFIG:Debug>:opencv_world4120d.lib>
     $<$<CONFIG:Release>:opencv_world4120.lib>
 )
@@ -53,3 +84,5 @@ add_custom_target(copy_deps ALL
 
 add_dependencies(encoder copy_deps)
 add_dependencies(decoder copy_deps)
+add_dependencies(textcode copy_deps)
+add_dependencies(textdecode copy_deps)
