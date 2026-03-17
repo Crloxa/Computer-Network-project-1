@@ -1,16 +1,17 @@
-//主函数
+//锟斤拷锟斤拷锟斤拷
 #include"pic.h"
 #include"code.h"
 #include"ffmpeg.h"
 #include"ImgDecode.h"
+#include"thread"
 
 #define Show_Img(src) do\
 {\
 	cv::imshow("DEBUG", src);\
 	cv::waitKey();\
 }while (0);
-//图片转视频
-int FileToVideo(const char* filePath, const char* videoPath,int timLim=INT_MAX,int fps=15)
+//图片转锟斤拷频
+int FileToVideo(const char* filePath, const char* videoPath, int timLim = INT_MAX, int fps = 15)
 {
 	FILE* fp = fopen(filePath, "rb");
 	if (fp == nullptr) return 1;
@@ -22,13 +23,13 @@ int FileToVideo(const char* filePath, const char* videoPath,int timLim=INT_MAX,i
 	fread(temp, 1, size, fp);
 	fclose(fp);
 	system("md outputImg");
-	Code::Main(temp, size, "outputImg", "png",1LL*fps*timLim/1000);
+	Code::Main(temp, size, "outputImg", "png", 1LL * fps * timLim / 1000);
 	FFMPEG::ImagetoVideo("outputImg", "png", videoPath, fps, 60, 100000);
 	system("rd /s /q outputImg");
 	free(temp);
 	return 0;
 }
-//视频转图片
+//锟斤拷频转图片
 int VideoToFile(const char* videoPath, const char* filePath)
 {
 	char imgName[256];
@@ -38,12 +39,12 @@ int VideoToFile(const char* videoPath, const char* filePath)
 	std::thread th([&] {FFMPEG::VideotoImage(videoPath, "inputImg", "jpg"); isThreadOver = true; });
 	int precode = -1;
 	std::vector<unsigned char> outputFile;
-	bool hasStarted=0;
+	bool hasStarted = 0;
 	bool ret = 0;
 	for (int i = 1;; ++i, system((std::string("del ") + imgName).c_str()))
 	{
-		printf("Reading Image %05d.jpg\n",i);
-		snprintf(imgName, 256, "inputImg\\%05d.jpg",i);
+		printf("Reading Image %05d.jpg\n", i);
+		snprintf(imgName, 256, "inputImg\\%05d.jpg", i);
 		FILE* fp;
 		do
 		{
@@ -56,14 +57,14 @@ int VideoToFile(const char* videoPath, const char* filePath)
 			ret = 1;
 			break;
 		}
-		cv::Mat srcImg = cv::imread(imgName, 1),disImg;
+		cv::Mat srcImg = cv::imread(imgName, 1), disImg;
 		fclose(fp);
-		
+
 		if (ImgParse::Main(srcImg, disImg))
 		{
 			continue;
 		}
-	    //Show_Img(disImg);
+		//Show_Img(disImg);
 		ImageDecode::ImageInfo imageInfo;
 		bool ans = ImageDecode::Main(disImg, imageInfo);
 		if (ans)
@@ -76,12 +77,12 @@ int VideoToFile(const char* videoPath, const char* filePath)
 				hasStarted = 1;
 			else continue;
 		}
-		if (precode == imageInfo.FrameBase) 
+		if (precode == imageInfo.FrameBase)
 			continue;
 		if (((precode + 1) & UINT16_MAX) != imageInfo.FrameBase)
 		{
 			puts("error, there is a skipped frame,there are some images parsed failed.");
-			ret=1;
+			ret = 1;
 			break;
 		}
 		printf("Frame %d is parsed!\n", imageInfo.FrameBase);
@@ -96,11 +97,11 @@ int VideoToFile(const char* videoPath, const char* filePath)
 	if (ret == 0)
 	{
 		th.join();
-		printf("\nVideo Parse is success.\nFile Size:%lldB\nTotal Frame:%d\n",outputFile.size(), precode);
-		FILE*fp=fopen(filePath, "wb");
+		printf("\nVideo Parse is success.\nFile Size:%lldB\nTotal Frame:%d\n", outputFile.size(), precode);
+		FILE* fp = fopen(filePath, "wb");
 		if (fp == nullptr) return 1;
 		outputFile.push_back('\0');
-		fwrite(outputFile.data(),sizeof(unsigned char),outputFile.size()-1,fp);
+		fwrite(outputFile.data(), sizeof(unsigned char), outputFile.size() - 1, fp);
 		fclose(fp);
 		return ret;
 	}
@@ -108,10 +109,12 @@ int VideoToFile(const char* videoPath, const char* filePath)
 }
 int main(int argc, char* argv[])
 {
+#ifdef BUILD_ENCODER
+	constexpr bool type = true;
+#else
 	constexpr bool type = false;
-	//type==true 将文件编码为视频  命令行参数 ： 输入文件路径 输出视频路径 最长视频时长
-	//type==false 将视频编码为文件 命令行参数 ： 输入视频路径 输出图片路径
-	if constexpr(type)
+#endif
+	if constexpr (type)
 	{
 		if (argc == 4)
 			return FileToVideo(argv[1], argv[2], std::stoi(argv[3]));
