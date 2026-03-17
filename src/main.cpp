@@ -1,32 +1,123 @@
-#include <opencv2/opencv.hpp>
+#include <climits>
+#include <filesystem>
 #include <iostream>
-#include <consoleapi2.h>
+#include <string>
 
-using namespace cv;
-using namespace std;
+#include "visual_net_pipeline.h"
 
-int main() {
-    // 1. 创建一个 400x400 的黑色画布 (8位3通道)
-    Mat image = Mat::zeros(400, 400, CV_8UC3);
+namespace
+{
+	void PrintUsage()
+	{
+		std::cout
+			<< "Usage:\n"
+			<< "  Project1 encode <input_file> <output_dir> [output_format] [frame_limit]\n"
+			<< "  Project1 decode-image <input_image> <output_file>\n"
+			<< "  Project1 decode-dir <input_dir> <output_file>\n"
+			<< "  Project1 roundtrip <input_file> <work_dir> [output_format] [frame_limit]\n";
+	}
 
-    // 2. 在图像中心画一个圆
-    // 参数：原图, 中心点, 半径, 颜色(BGR), 粗细
-    circle(image, Point(200, 200), 100, Scalar(0, 255, 255), 3);
+	int ParseFrameLimit(const char* value)
+	{
+		return std::stoi(value);
+	}
+}
 
-    // 3. 在图像上写字
-    putText(image, "OpenCV Config Success!", Point(50, 50),
-        FONT_HERSHEY_SIMPLEX, 0.8, Scalar(255, 255, 255), 2);
+int main(int argc, char* argv[])
+{
+	if (argc < 2)
+	{
+		PrintUsage();
+		return 1;
+	}
 
-    // 4. 创建窗口并显示
-    namedWindow("OpenCV Test", WINDOW_AUTOSIZE);
-    imshow("OpenCV Test", image);
+	const std::string command = argv[1];
+	std::string error;
 
-    cout << "OpenCV 版本: " << CV_VERSION << endl;
-    cout << "按下任意键退出程序..." << endl;
+	if (command == "encode")
+	{
+		if (argc < 4 || argc > 6)
+		{
+			PrintUsage();
+			return 1;
+		}
 
-    // 5. 等待按键，否则窗口会一闪而过
-    waitKey(0);
-    destroyAllWindows();
+		const std::string format = (argc >= 5) ? argv[4] : "png";
+		const int frameLimit = (argc == 6) ? ParseFrameLimit(argv[5]) : INT_MAX;
+		if (!VisualNet::EncodeFileToDirectory(argv[2], argv[3], format, frameLimit, error))
+		{
+			std::cerr << error << '\n';
+			return 1;
+		}
 
-    return 0;
+		std::cout << "Encoded frames written to " << argv[3] << '\n';
+		return 0;
+	}
+
+	if (command == "decode-image")
+	{
+		if (argc != 4)
+		{
+			PrintUsage();
+			return 1;
+		}
+
+		VisualNet::DecodeStats stats;
+		if (!VisualNet::DecodeImageToFile(argv[2], argv[3], stats, error))
+		{
+			std::cerr << error << '\n';
+			return 1;
+		}
+
+		std::cout << "Decoded " << stats.decoded_frames << " frame(s) into " << argv[3] << '\n';
+		return 0;
+	}
+
+	if (command == "decode-dir")
+	{
+		if (argc != 4)
+		{
+			PrintUsage();
+			return 1;
+		}
+
+		VisualNet::DecodeStats stats;
+		if (!VisualNet::DecodeDirectoryToFile(argv[2], argv[3], stats, error))
+		{
+			std::cerr << error << '\n';
+			return 1;
+		}
+
+		std::cout << "Decoded " << stats.decoded_frames << " frame(s) into " << argv[3] << '\n';
+		return 0;
+	}
+
+	if (command == "roundtrip")
+	{
+		if (argc < 4 || argc > 6)
+		{
+			PrintUsage();
+			return 1;
+		}
+
+		const std::string format = (argc >= 5) ? argv[4] : "png";
+		const int frameLimit = (argc == 6) ? ParseFrameLimit(argv[5]) : INT_MAX;
+		VisualNet::DecodeStats stats;
+		if (!VisualNet::RunRoundTrip(argv[2], argv[3], format, frameLimit, stats, error))
+		{
+			std::cerr << error << '\n';
+			return 1;
+		}
+
+		std::cout
+			<< "Roundtrip succeeded. Decoded "
+			<< stats.decoded_frames
+			<< " frame(s). Output written under "
+			<< std::filesystem::path(argv[3]).string()
+			<< '\n';
+		return 0;
+	}
+
+	PrintUsage();
+	return 1;
 }
