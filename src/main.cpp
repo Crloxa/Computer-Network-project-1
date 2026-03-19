@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <string>
 #include <thread>
 #include <vector>
@@ -23,16 +24,27 @@ namespace
     {
         std::cout
             << "Usage:\n"
+            << "  encode <input_file> <output_video> <max_duration_ms>\n"
+            << "  decode <input_video> <output_file> <validity_file>\n"
             << "  Project1 encode <input_file> <output_dir> [output_format] [frame_limit]\n"
             << "  Project1 encode-video <input_file> <output_video> [duration_ms] [fps]\n"
             << "  Project1 decode-image <input_image> <output_file>\n"
             << "  Project1 decode-dir <input_dir> <output_file>\n"
-            << "  Project1 decode-video <input_video> <output_file>\n";
+            << "  Project1 decode-video <input_video> <output_file>\n"
+            << "  Project1 decode-video-v <input_video> <output_file> <validity_file>\n";
     }
 
     int ParsePositiveInt(const char* value)
     {
-        return std::stoi(value);
+        try
+        {
+            return std::stoi(value);
+        }
+        catch (const std::exception&)
+        {
+            std::cerr << "error: invalid integer argument '" << value << "'\n";
+            return -1;
+        }
     }
 
     bool ReadBinaryFile(const fs::path& path, std::vector<char>& data)
@@ -272,16 +284,18 @@ namespace
         return DecodeImageSequence(imagePaths, outputFile) ? 0 : 1;
     }
 
-    int DecodeVideo(const char* inputVideo, const char* outputFile)
+    // Extract video frames into a temporary directory and return their sorted paths.
+    // Returns false (and joins the extractor thread) on failure.
+    bool ExtractVideoFrames(const char* inputVideo, const fs::path& frameDir,
+                            std::vector<fs::path>& imagePaths)
     {
-        const fs::path frameDir = "inputImg";
         std::error_code ec;
         fs::remove_all(frameDir, ec);
         fs::create_directories(frameDir, ec);
         if (ec)
         {
             std::cerr << "error: failed to prepare temporary frame directory\n";
-            return 1;
+            return false;
         }
 
         bool extractionDone = false;
@@ -292,7 +306,6 @@ namespace
             extractionDone = true;
         });
 
-        std::vector<fs::path> imagePaths;
         for (int index = 1;; ++index)
         {
             char fileName[64];
@@ -315,6 +328,17 @@ namespace
         if (extractionResult != 0)
         {
             std::cerr << "error: ffmpeg failed while extracting video frames\n";
+            return false;
+        }
+        return true;
+    }
+
+    int DecodeVideo(const char* inputVideo, const char* outputFile)
+    {
+        const fs::path frameDir = "inputImg";
+        std::vector<fs::path> imagePaths;
+        if (!ExtractVideoFrames(inputVideo, frameDir, imagePaths))
+        {
             return 1;
         }
         if (imagePaths.empty())
@@ -325,10 +349,190 @@ namespace
 
         return DecodeImageSequence(imagePaths, outputFile) ? 0 : 1;
     }
+
+    // Decode a video with best-effort partial recovery.
+    // Produces out.bin (decoded bytes) and vout.bin (validity markers).
+    // vout.bin has the same byte count as out.bin; each byte is 0xFF if the
+    // corresponding output byte came from a frame that passed checksum, 0x00
+    // if the frame was missing or corrupted.
+    int DecodeVideoWithValidity(const char* inputVideo,
+                                const char* outputFile,
+                                const char* validityFile)
+    {
+        const fs::path frameDir = "inputImg_decode";
+        std::vector<fs::path> imagePaths;
+        if (!ExtractVideoFrames(inputVideo, frameDir, imagePaths))
+        {
+            return 1;
+        }
+        if (imagePaths.empty())
+        {
+            std::cerr << "error: no frames extracted from video\n";
+            return 1;
+        }
+
+        // Collect all uniquely decodable frames, keyed by frame number.
+        // Use a std::map so iteration is in frame-number order for diagnostics.
+        std::map<uint16_t, ImageDecode::ImageInfo> frameMap;
+        uint16_t startFrameNo = 0;
+        uint16_t endFrameNo = 0;
+        bool foundStart = false;
+        bool foundEnd = false;
+
+        for (const fs::path& imagePath : imagePaths)
+        {
+            ImageDecode::ImageInfo imageInfo;
+            if (!DecodeFrameImage(imagePath, imageInfo))
+            {
+                continue;
+            }
+
+            const uint16_t fn = imageInfo.FrameBase;
+            if (frameMap.count(fn) != 0)
+            {
+                continue; // duplicate frame
+            }
+
+            if (imageInfo.IsStart)
+            {
+                startFrameNo = fn;
+                foundStart = true;
+            }
+            if (imageInfo.IsEnd)
+            {
+                endFrameNo = fn;
+                foundEnd = true;
+            }
+
+            frameMap[fn] = std::move(imageInfo);
+            std::cout << "Decoded frame " << fn
+                      << " from " << imagePath.filename().string() << '\n';
+        }
+
+        if (!foundStart)
+        {
+            std::cerr << "warning: no start frame found; writing empty output\n";
+            const std::vector<unsigned char> empty;
+            WriteBinaryFile(outputFile, empty);
+            WriteBinaryFile(validityFile, empty);
+            return 0;
+        }
+
+        // Determine the range of frame numbers to assemble.
+        // If end not found, assemble up to the last seen frame number.
+        if (!foundEnd)
+        {
+            std::cerr << "warning: no end frame found; output may be incomplete\n";
+            // Use the last frame number seen after (or at) start.
+            // Walk forward from start to find the highest contiguous frame.
+            endFrameNo = startFrameNo;
+            for (const auto& kv : frameMap)
+            {
+                const uint16_t fn = kv.first;
+                const int dist = static_cast<int>(
+                    (static_cast<uint32_t>(fn) - startFrameNo + 65536u) % 65536u);
+                const int endDist = static_cast<int>(
+                    (static_cast<uint32_t>(endFrameNo) - startFrameNo + 65536u) % 65536u);
+                if (dist > endDist)
+                {
+                    endFrameNo = fn;
+                }
+            }
+        }
+
+        // Assemble output frame by frame from startFrameNo to endFrameNo.
+        const uint32_t totalFrames =
+            (static_cast<uint32_t>(endFrameNo) - startFrameNo + 65536u) % 65536u + 1u;
+
+        std::vector<unsigned char> outputBytes;
+        std::vector<unsigned char> validityBytes;
+        outputBytes.reserve(totalFrames * static_cast<uint32_t>(ImageDecode::BytesPerFrame));
+        validityBytes.reserve(outputBytes.capacity());
+
+        for (uint32_t i = 0; i < totalFrames; ++i)
+        {
+            const uint16_t fn = static_cast<uint16_t>((startFrameNo + i) % 65536u);
+            const auto it = frameMap.find(fn);
+            if (it != frameMap.end())
+            {
+                const auto& info = it->second.Info;
+                outputBytes.insert(outputBytes.end(), info.begin(), info.end());
+                validityBytes.insert(validityBytes.end(), info.size(), 0xFF);
+            }
+            else
+            {
+                // Missing frame: fill placeholder zeros and mark invalid.
+                // BytesPerFrame is the worst-case payload size; the evaluator
+                // ignores bytes marked invalid in the validity file.
+                const std::size_t fillLen =
+                    static_cast<std::size_t>(ImageDecode::BytesPerFrame);
+                outputBytes.insert(outputBytes.end(), fillLen, 0x00);
+                validityBytes.insert(validityBytes.end(), fillLen, 0x00);
+                std::cerr << "warning: frame " << fn << " missing; filled with zeros\n";
+            }
+        }
+
+        if (!WriteBinaryFile(outputFile, outputBytes))
+        {
+            std::cerr << "error: failed to write output file " << outputFile << '\n';
+            return 1;
+        }
+        if (!WriteBinaryFile(validityFile, validityBytes))
+        {
+            std::cerr << "error: failed to write validity file " << validityFile << '\n';
+            return 1;
+        }
+
+        std::cout << "Decoded " << outputBytes.size() << " bytes into " << outputFile << '\n';
+        std::cout << "Validity markers written to " << validityFile << '\n';
+        return 0;
+    }
+
+    // Standalone encoder: encode <input_file> <output_video> <max_duration_ms>
+    int RunEncoder(const char* inputFile, const char* outputVideo, int durationMs)
+    {
+        constexpr int kDefaultFps = 15;
+        return EncodeToVideo(inputFile, outputVideo, durationMs, kDefaultFps);
+    }
+
+    // Standalone decoder: decode <input_video> <output_file> <validity_file>
+    int RunDecoder(const char* inputVideo, const char* outputFile, const char* validityFile)
+    {
+        return DecodeVideoWithValidity(inputVideo, outputFile, validityFile);
+    }
 }
 
 int main(int argc, char* argv[])
 {
+    // Detect standalone encoder/decoder invocation by executable name.
+    // When the executable is named (or symlinked as) "encode"/"decode" the
+    // new interface is used: positional args without a leading subcommand.
+    const std::string exeName = std::filesystem::path(argv[0]).stem().string();
+    if (exeName == "encode")
+    {
+        if (argc != 4)
+        {
+            std::cerr << "Usage: encode <input_file> <output_video> <max_duration_ms>\n";
+            return 1;
+        }
+        const int durationMs = ParsePositiveInt(argv[3]);
+        if (durationMs <= 0)
+        {
+            std::cerr << "error: max_duration_ms must be a positive integer\n";
+            return 1;
+        }
+        return RunEncoder(argv[1], argv[2], durationMs);
+    }
+    if (exeName == "decode")
+    {
+        if (argc != 4)
+        {
+            std::cerr << "Usage: decode <input_video> <output_file> <validity_file>\n";
+            return 1;
+        }
+        return RunDecoder(argv[1], argv[2], argv[3]);
+    }
+
     if (argc < 2)
     {
         PrintUsage();
@@ -388,6 +592,16 @@ int main(int argc, char* argv[])
             return 1;
         }
         return DecodeVideo(argv[2], argv[3]);
+    }
+
+    if (command == "decode-video-v")
+    {
+        if (argc != 5)
+        {
+            PrintUsage();
+            return 1;
+        }
+        return DecodeVideoWithValidity(argv[2], argv[3], argv[4]);
     }
 
     PrintUsage();
