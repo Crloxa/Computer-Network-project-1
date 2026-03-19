@@ -152,6 +152,7 @@
   <ItemGroup>
     <ClInclude Include="src\code.h" />
     <ClInclude Include="src\ffmpeg.h" />
+    <ClInclude Include="src\frame_constants.h" />
     <ClInclude Include="src\ImgDecode.h" />
     <ClInclude Include="src\pic.h" />
   </ItemGroup>

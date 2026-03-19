@@ -1,17 +1,20 @@
 ﻿#pragma once
 
 #include <opencv2/opencv.hpp>
-
-#define Show_Img(src) do\
-{\
-	cv::imshow("src", src);\
-	cv::waitKey();\
-}while (0);
+#include "frame_constants.h"
 
 namespace ImageDecode
 {
 	using namespace std;
 	using namespace cv;
+
+	// 协议几何常量由共享头文件统一提供，此处重新导出以保持 ImageDecode:: 访问路径兼容
+	using FrameLayout::BytesPerFrame;
+	using FrameLayout::FrameSize;
+	using FrameLayout::FrameOutputRate;
+	using FrameLayout::SafeAreaWidth;
+	using FrameLayout::QrPointSize;
+	using FrameLayout::SmallQrPointbias;
 
 	struct ImageInfo
 	{
@@ -21,13 +24,6 @@ namespace ImageDecode
 		bool IsStart;
 		bool IsEnd;
 	};
-
-	constexpr int BytesPerFrame = 1878;
-	constexpr int FrameSize = 133;
-	constexpr int FrameOutputRate = 10;
-	constexpr int SafeAreaWidth = 2;
-	constexpr int QrPointSize = 21;
-	constexpr int SmallQrPointbias = 7;
 
 	bool Main(Mat& mat, ImageInfo& imageInfo);
 }

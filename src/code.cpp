@@ -1,8 +1,8 @@
 #include "code.h"
+#include "frame_constants.h"
 
 #include <algorithm>
 #include <array>
-#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -21,42 +21,8 @@
 
 namespace Code
 {
-	constexpr int BytesPerFrame = 1878;
-	constexpr int FrameSize = 133;
-	constexpr int FrameOutputRate = 10;
-	constexpr int FrameOutputSize = FrameSize * FrameOutputRate;
-	constexpr int SafeAreaWidth = 2;
-	constexpr int QrPointSize = 21;
-	constexpr int SmallQrPointbias = 7;
-	constexpr int SmallQrPointRadius = 3;
-	constexpr int CornerReserveSize = 21;
-	constexpr int HeaderHeight = 3;
-	constexpr int HeaderWidth = 16;
-	constexpr int HeaderLeft = 21;
-	constexpr int HeaderTop = 3;
-	constexpr int HeaderFieldHeight = 1;
-	constexpr int HeaderFieldBits = 16;
-	constexpr int HeaderBitWidth = 1;
-	constexpr int HeaderInnerLeft = 0;
-	constexpr int TopDataLeft = HeaderLeft + HeaderWidth;
-	constexpr int TopDataWidth = 75;
-	constexpr int DataAreaCount = 5;
-	constexpr int PaddingCellCount = 4;
-
-	struct DataArea
-	{
-		int top;
-		int left;
-		int height;
-		int width;
-		int trimRight;
-	};
-
-	struct CellPos
-	{
-		int row;
-		int col;
-	};
+	// 协议几何常量、DataArea / CellPos / FrameType 及单元格构建工具均来自共享头文件
+	using namespace FrameLayout;
 
 	struct DebugRegion
 	{
@@ -74,28 +40,11 @@ namespace Code
 		White = 7
 	};
 
-	enum class FrameType
-	{
-		Start = 0,
-		End = 1,
-		StartAndEnd = 2,
-		Normal = 3
-	};
-
 	const Vec3b pixel[8] =
 	{
 		Vec3b(0, 0, 0), Vec3b(0, 0, 255), Vec3b(0, 255, 0), Vec3b(0, 255, 255),
 		Vec3b(255, 0, 0), Vec3b(255, 0, 255), Vec3b(255, 255, 0), Vec3b(255, 255, 255)
 	};
-
-	const std::array<DataArea, DataAreaCount> kDataAreas =
-	{{
-		{3, TopDataLeft, 3, TopDataWidth, 0},
-		{6, 21, 15, 91, 0},
-		{21, 3, 88, 127, 0},
-		{109, 3, 3, 127, 0},
-		{112, 21, 18, 91, 0}
-	}};
 
 	const std::array<DebugRegion, 10> kDebugRegions =
 	{{
@@ -117,100 +66,9 @@ namespace Code
 		return std::abs(row - center) <= SmallQrPointRadius && std::abs(col - center) <= SmallQrPointRadius;
 	}
 
-	bool isInsideCornerQuietZone(int row, int col)
-	{
-		return row >= 130 || col >= 130;
-	}
-
-	bool isInsideCornerSafetyZone(int row, int col)
-	{
-		const int center = FrameSize - SmallQrPointbias;
-		return std::abs(row - center) <= SmallQrPointRadius + 2 && std::abs(col - center) <= SmallQrPointRadius + 2;
-	}
-
 	void fillBinaryNoiseCell(Vec3b& cell)
 	{
 		cell = pixel[(std::rand() & 1) ? White : Black];
-	}
-
-	std::vector<CellPos> buildAreaCells(const DataArea& area)
-	{
-		std::vector<CellPos> cells;
-		for (int row = area.top; row < area.top + area.height; ++row)
-		{
-			const int rowWidth = area.width - area.trimRight;
-			for (int col = area.left; col < area.left + rowWidth; ++col)
-			{
-				cells.push_back({ row, col });
-			}
-		}
-		return cells;
-	}
-
-	std::vector<CellPos> buildCornerDataCells()
-	{
-		std::vector<CellPos> cells;
-		for (int row = FrameSize - CornerReserveSize; row < FrameSize; ++row)
-		{
-			for (int col = FrameSize - CornerReserveSize; col < FrameSize; ++col)
-			{
-				if (isInsideCornerQuietZone(row, col))
-				{
-					continue;
-				}
-				if (isInsideCornerSafetyZone(row, col))
-				{
-					continue;
-				}
-				cells.push_back({ row, col });
-			}
-		}
-		return cells;
-	}
-
-	std::vector<CellPos> buildFullDataCells()
-	{
-		std::vector<CellPos> cells;
-		for (const auto& area : kDataAreas)
-		{
-			const auto areaCells = buildAreaCells(area);
-			cells.insert(cells.end(), areaCells.begin(), areaCells.end());
-		}
-		const auto cornerCells = buildCornerDataCells();
-		cells.insert(cells.end(), cornerCells.begin(), cornerCells.end());
-		return cells;
-	}
-
-	std::vector<CellPos> buildMergedDataCells()
-	{
-		auto cells = buildFullDataCells();
-		if (cells.size() > PaddingCellCount)
-		{
-			cells.resize(cells.size() - PaddingCellCount);
-		}
-		return cells;
-	}
-
-	std::vector<CellPos> getPaddingCells()
-	{
-		const auto cells = buildFullDataCells();
-		if (cells.size() <= PaddingCellCount)
-		{
-			return {};
-		}
-		return std::vector<CellPos>(cells.end() - PaddingCellCount, cells.end());
-	}
-
-	void fillAreaNoise(Mat& mat, const DataArea& area)
-	{
-		for (int row = area.top; row < area.top + area.height; ++row)
-		{
-			const int rowWidth = area.width - area.trimRight;
-			for (int col = area.left; col < area.left + rowWidth; ++col)
-			{
-				fillBinaryNoiseCell(mat.at<Vec3b>(row, col));
-			}
-		}
 	}
 
 	void writeBytesToCells(Mat& mat, const unsigned char* info, int len, const std::vector<CellPos>& cells)
@@ -420,15 +278,6 @@ namespace Code
 	{
 		writeHeaderField(mat, 1, checkcode);
 		writeHeaderField(mat, 2, FrameNo);
-#ifdef Code_DEBUG
-		Show_Scale_Img(mat);
-#endif
-	}
-
-	void BulidInfoRect(Mat& mat, const char* info, int len, int areaID)
-	{
-		const auto cells = buildAreaCells(kDataAreas[areaID]);
-		writeBytesToCells(mat, reinterpret_cast<const unsigned char*>(info), len, cells);
 #ifdef Code_DEBUG
 		Show_Scale_Img(mat);
 #endif

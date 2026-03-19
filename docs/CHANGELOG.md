@@ -10,9 +10,24 @@
 
 ## 2026-03-19
 
+- Type: `Removed`
+  - Scope: `code`
+  - Summary: 删除 `src/main_without_pic.cpp`（从未加入 Visual Studio 工程编译，是 `main.cpp` 的 95% 冗余副本，仅 `DecodeFrameImage` 实现略有差异）
+  - Compatibility: `non-breaking`
+
+- Type: `Removed`
+  - Scope: `code`
+  - Summary: 删除 `Code::BulidInfoRect()`（声明在 `code.h`、实现在 `code.cpp`，但从未被调用）和 `Code::fillAreaNoise()`（`code.cpp` 内部死函数，从未被调用），并删除 `ImgDecode.h` 中从未使用的 `Show_Img` 调试宏
+  - Compatibility: `non-breaking`
+
+- Type: `Added`
+  - Scope: `code`
+  - Summary: 新增 `src/frame_constants.h`，将编码端（`code.cpp`）与解码端（`ImgDecode.h`/`ImgDecode.cpp`）之间重复定义的 20 个协议几何常量、`DataArea`/`CellPos` 结构体、`FrameType` 枚举、`kDataAreas` 数组以及 7 个单元格构建工具函数统一迁移至 `FrameLayout` 命名空间；两端通过 `using namespace FrameLayout` 引用，彻底消除跨文件的定义重复，协议格式无变化
+  - Compatibility: `non-breaking`
+
 - Type: `Changed`
   - Scope: `encode/decode`
-  - Summary: 灏嗛潪 `main`銆侀潪 `pic` 缂栬В鐮侀摼璺腑鐨?`FrameOutputRate` 浠?`8` 缁熶竴璋冩暣涓?`10`锛屽苟鍚屾瀵归綈缂栫爜绔笌瑙ｇ爜澶撮儴甯搁噺瀹氫箟
+  - Summary: 将非 `main`、非 `pic` 编解码链路中的 `FrameOutputRate` 从 `8` 统一调整为 `10`，并同步对齐编码端与解码端头部常量定义
   - Compatibility: `breaking`
 
 ## 2026-03-12
