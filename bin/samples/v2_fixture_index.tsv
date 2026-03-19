@@ -1,4 +1,0 @@
-case	expected_status	profile	ecc	canvas_px	notes
-v2_success	success	iso133	Q	1440	full frame set; output.bin must match input.bin
-v2_missing_frame	missing_frames	iso133	Q	1440	frame_00001.png removed from input set
-v2_crc_error	missing_frames	iso133	Q	1440	frame_00001.png carries payload/CRC mismatch
