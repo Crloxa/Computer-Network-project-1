@@ -1,7 +1,0 @@
-D:/计算机网络实验/Lab1/Computer-Network-project-1/build-test/CMakeFiles/encoder.dir
-D:/计算机网络实验/Lab1/Computer-Network-project-1/build-test/CMakeFiles/decoder.dir
-D:/计算机网络实验/Lab1/Computer-Network-project-1/build-test/CMakeFiles/textcode.dir
-D:/计算机网络实验/Lab1/Computer-Network-project-1/build-test/CMakeFiles/textdecode.dir
-D:/计算机网络实验/Lab1/Computer-Network-project-1/build-test/CMakeFiles/copy_deps.dir
-D:/计算机网络实验/Lab1/Computer-Network-project-1/build-test/CMakeFiles/edit_cache.dir
-D:/计算机网络实验/Lab1/Computer-Network-project-1/build-test/CMakeFiles/rebuild_cache.dir

@@ -22,6 +22,19 @@ x86/
 
 # Local demo/runtime outputs
 /out/
+/inputImg/
+/outputImg/
+/0
+
+# CMake / local build directories
+/build/
+/build-*/
+/CMakeFiles/
+/CMakeCache.txt
+/cmake_install.cmake
+/build.ninja
+/.ninja_log
+/.ninja_deps
 
 # Local Python virtual environment
 /.venv/

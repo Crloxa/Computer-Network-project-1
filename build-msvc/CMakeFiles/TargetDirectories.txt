@@ -1,9 +1,0 @@
-D:/计算机网络实验/Lab1/Computer-Network-project-1/build-msvc/CMakeFiles/encoder.dir
-D:/计算机网络实验/Lab1/Computer-Network-project-1/build-msvc/CMakeFiles/decoder.dir
-D:/计算机网络实验/Lab1/Computer-Network-project-1/build-msvc/CMakeFiles/textcode.dir
-D:/计算机网络实验/Lab1/Computer-Network-project-1/build-msvc/CMakeFiles/textdecode.dir
-D:/计算机网络实验/Lab1/Computer-Network-project-1/build-msvc/CMakeFiles/encoder_without_pic.dir
-D:/计算机网络实验/Lab1/Computer-Network-project-1/build-msvc/CMakeFiles/decoder_without_pic.dir
-D:/计算机网络实验/Lab1/Computer-Network-project-1/build-msvc/CMakeFiles/copy_deps.dir
-D:/计算机网络实验/Lab1/Computer-Network-project-1/build-msvc/CMakeFiles/ALL_BUILD.dir
-D:/计算机网络实验/Lab1/Computer-Network-project-1/build-msvc/CMakeFiles/ZERO_CHECK.dir
