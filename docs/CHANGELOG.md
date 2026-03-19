@@ -8,6 +8,13 @@
 - 每条记录至少写明：日期、类型、范围、摘要、兼容性
 - 纯格式化、空白调整、错别字修正可不记录
 
+## 2026-03-19
+
+- Type: `Changed`
+  - Scope: `encode/decode`
+  - Summary: 灏嗛潪 `main`銆侀潪 `pic` 缂栬В鐮侀摼璺腑鐨?`FrameOutputRate` 浠?`8` 缁熶竴璋冩暣涓?`10`锛屽苟鍚屾瀵归綈缂栫爜绔笌瑙ｇ爜澶撮儴甯搁噺瀹氫箟
+  - Compatibility: `breaking`
+
 ## 2026-03-12
 
 - Type: `Changed`

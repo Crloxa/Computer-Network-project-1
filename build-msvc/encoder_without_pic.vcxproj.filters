@@ -1,0 +1,25 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="D:\计算机网络实验\Lab1\Computer-Network-project-1\src\main_without_pic.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\计算机网络实验\Lab1\Computer-Network-project-1\src\code.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\计算机网络实验\Lab1\Computer-Network-project-1\src\ffmpeg.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\计算机网络实验\Lab1\Computer-Network-project-1\src\ImgDecode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="D:\计算机网络实验\Lab1\Computer-Network-project-1\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{17E8F7CB-4B5B-3009-914D-79746EBF15EE}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>
