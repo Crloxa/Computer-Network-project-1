@@ -1,4 +1,4 @@
-#include"ImgParse.h"
+#include"ImgParse_new.h"
 
 //#define FIND_QRPOINT_DEBUG 1
 //#define CropParallelRect_DEBUG 1
