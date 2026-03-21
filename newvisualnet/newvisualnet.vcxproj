@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <!-- 仅保留x64平台 -->
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <!-- VS2026适配 -->
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{157614d0-d528-4c12-8612-eb871c802c5c}</ProjectGuid>
+    <RootNamespace>newvisualnet</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <!-- 路径基准：SolutionDir指向SLN同级目录 -->
+    <SolutionDir Condition="$(SolutionDir) == '' Or $(SolutionDir) == '*Undefined*'">$(ProjectDir)..\</SolutionDir>
+    <!-- 新增：固定调试工作目录 -->
+    <LocalDebuggerWorkingDirectory>$(SolutionDir)x64\$(Configuration)\</LocalDebuggerWorkingDirectory>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <!-- VS2026工具集 -->
+    <CharacterSet>MultiByte</CharacterSet>
+    <!-- 修改：多字节字符集 -->
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <!-- VS2026工具集 -->
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+    <!-- 修改：多字节字符集 -->
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings" />
+  <ImportGroup Label="Shared" />
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_DEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <!-- 仅保留OpenCV头文件路径 -->
+      <AdditionalIncludeDirectories>$(SolutionDir)opencv\build\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <!-- 新增：UTF-8编译选项 -->
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <!-- 仅保留OpenCV库文件路径 -->
+      <AdditionalLibraryDirectories>$(SolutionDir)opencv\build\x64\vc16\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <!-- 仅保留OpenCV+系统库依赖 -->
+      <AdditionalDependencies>opencv_world4120d.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <!-- 仅保留OpenCV头文件路径 -->
+      <AdditionalIncludeDirectories>$(SolutionDir)opencv\build\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <!-- 新增：UTF-8编译选项 -->
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <!-- 仅保留OpenCV库文件路径 -->
+      <AdditionalLibraryDirectories>$(SolutionDir)opencv\build\x64\vc16\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <!-- 仅保留OpenCV+系统库依赖 -->
+      <AdditionalDependencies>opencv_world4120.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <!-- 源文件/头文件列表 -->
+  <ItemGroup>
+    <ClInclude Include="Config.h" />
+    <ClInclude Include="CRC16.h" />
+    <ClInclude Include="Decoder.h" />
+    <ClInclude Include="drawQRLayout.h" />
+    <ClInclude Include="Encoder.h" />
+    <ClInclude Include="FFmpegWrapper.h" />
+    <ClInclude Include="FileUtils.h" />
+    <ClInclude Include="QRPosition.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="CRC16.cpp" />
+    <ClCompile Include="Decoder.cpp" />
+    <ClCompile Include="drawQRLayout.cpp" />
+    <ClCompile Include="Encoder.cpp" />
+    <ClCompile Include="FFmpegWrapper.cpp" />
+    <ClCompile Include="FileUtils.cpp" />
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="QRPosition.cpp" />
+    <ClCompile Include="test_qr.cpp" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets" />
+</Project>

@@ -1,46 +1,47 @@
-# Visual Studio 临时文件
-.vs/
-/GroupTest/src/.vs/
-[Dd]ebug/
-[Rr]elease/
-x64/
-x86/
-*.user
-*.aps
-*.pdb
+# Visual Studio 编译中间文件（保留可执行文件，但排除中间文件）
 *.obj
-*.log
+*.pdb
+*.idb
+*.ilk
+*.exp
 *.tlog
 *.lastbuildstate
-*.recipe
-*.ilk
-*.ipch
+*.vcxproj.user
+*.suo
+*.db
 
-# 刚才提到的生成后事件拷贝的副本
-# 如果你确定 .dll 只存在于 lib/ 中，那么过滤掉其他地方的 .dll
-# *.dll
+# Visual Studio 临时文件
+.vs/
 
-# Local demo/runtime outputs
-/out/
-/inputImg/
-/outputImg/
-/0
+# IDE 配置文件
+*.vcxproj.filters
+*.vcxproj.user
 
-# CMake / local build directories
-/build/
-/build-*/
-/CMakeFiles/
-/CMakeCache.txt
-/cmake_install.cmake
-/build.ninja
-/.ninja_log
-/.ninja_deps
+# 注意：以下文件需要保留在仓库中：
+# - *.sln (Visual Studio 解决方案文件)
+# - *.vcxproj (Visual Studio 项目文件)
 
-# Local Python virtual environment
-/.venv/
+# 系统文件
+Thumbs.db
+.DS_Store
 
-# Python 缓存文件
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
+# 日志文件
+*.log
+
+opencv/
+
+#太大了，加不了
+opencv_world4120d.dll    
+
+ffmpeg*/
+# 注意：以下目录和文件需要保留在仓库中，用于测试：
+# - input/ 目录（包含测试输入文件）
+# - output/ 目录（包含示例输出文件）
+# - input/temp/ 和 output/temp/ 目录（测试临时文件）
+# - 所有示例图片和测试数据文件
+
+# 注意：以下文件需要保留在仓库中，以便用户可以直接使用：
+# - x64/Debug/newvisualnet.exe (编译好的可执行文件)
+# - opencv/build/bin/ (OpenCV DLL文件)
+# - ffmpeg-2026-03-05-git-74cfcd1c69-essentials_build/bin/ (FFmpeg可执行文件)
+# - 必要的依赖库文件（如 libavcodec.dll, libavformat.dll, libavutil.dll 等）

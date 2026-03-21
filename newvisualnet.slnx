@@ -1,0 +1,7 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="newvisualnet/newvisualnet.vcxproj" Id="157614d0-d528-4c12-8612-eb871c802c5c" />
+</Solution>
