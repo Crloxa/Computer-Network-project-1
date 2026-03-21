@@ -17,6 +17,7 @@
 	cv::waitKey();\
 }while (0);
 
+// 文件转视频 (编码器逻辑)
 int FileToVideo(const char* filePath, const char* videoPath, int timLim = INT_MAX, int fps = 15)
 {
 	FILE* fp = fopen(filePath, "rb");
@@ -29,6 +30,7 @@ int FileToVideo(const char* filePath, const char* videoPath, int timLim = INT_MA
 	fread(temp, 1, size, fp);
 	fclose(fp);
 
+	// 使用 C++17 filesystem 替代 system("md ...") 和 system("rd ...")
 	std::filesystem::remove_all("outputImg");
 	std::filesystem::create_directory("outputImg");
 
@@ -40,6 +42,7 @@ int FileToVideo(const char* filePath, const char* videoPath, int timLim = INT_MA
 	return 0;
 }
 
+// 视频转文件 (解码器逻辑)
 int VideoToFile(const char* videoPath, const char* filePath)
 {
 	char imgName[256];
@@ -60,27 +63,32 @@ int VideoToFile(const char* videoPath, const char* filePath)
 	for (int i = 1;; ++i)
 	{
 		snprintf(imgName, 256, "inputImg/%05d.jpg", i);
-
-		cv::Mat srcImg;
-		// 【修复 Bug 1】不用 fopen，直接用 imread 确保图片完全可用
-		do {
-			srcImg = cv::imread(imgName, 1);
-			if (srcImg.empty() && !isThreadOver) {
-				std::this_thread::sleep_for(std::chrono::milliseconds(10)); // 给 FFmpeg 留出写磁盘的时间
-			}
-		} while (srcImg.empty() && !isThreadOver);
-
-		if (srcImg.empty())
+		FILE* fp = nullptr;
+		do
 		{
-			break; // 线程结束且已无图片
+			fp = fopen(imgName, "rb");
+			if (fp == nullptr && !isThreadOver) {
+				std::this_thread::yield(); // 等待 FFmpeg 抽帧
+			}
+		} while (fp == nullptr && !isThreadOver);
+
+		if (fp == nullptr)
+		{
+			// 线程结束且文件仍然不存在，说明视频读取完毕
+			break;
 		}
 
-		std::filesystem::remove(imgName); // 读完直接删掉
-
+		cv::Mat srcImg = cv::imread(imgName, 1);
 		cv::Mat disImg;
+		fclose(fp);
+
+		// 读完图片后立即通过 C++ 标准库删除，替代 system("del ...")
+		std::filesystem::remove(imgName);
+
+		// ★ 结合 pic.cpp 和纯数字后备逻辑！
 		if (ImgParse::Main(srcImg, disImg))
 		{
-			// 物理透视纠正失败时，说明是纯数字像素或者已无可救药，触发等比缩放保底
+			// pic.cpp 物理透视纠正失败时，走纯数字像素的等比缩放逻辑
 			if (srcImg.rows == ImageDecode::FrameSize && srcImg.cols == ImageDecode::FrameSize) {
 				disImg = srcImg;
 			}
@@ -90,7 +98,8 @@ int VideoToFile(const char* videoPath, const char* filePath)
 		}
 
 		ImageDecode::ImageInfo imageInfo;
-		if (ImageDecode::Main(disImg, imageInfo))
+		bool ans = ImageDecode::Main(disImg, imageInfo);
+		if (ans)
 		{
 			continue;
 		}
@@ -138,16 +147,21 @@ int VideoToFile(const char* videoPath, const char* filePath)
 
 int main(int argc, char* argv[])
 {
+	// 使用 CMake 中配置的宏 BUILD_ENCODER 和 BUILD_DECODER 代替 constexpr 控制流
+	// 彻底解决 "C2181 没有匹配 if 的非法 else" 问题
 #if defined(BUILD_ENCODER)
 	if (argc == 4)
 		return FileToVideo(argv[1], argv[2], std::stoi(argv[3]));
 	else if (argc == 5)
 		return FileToVideo(argv[1], argv[2], std::stoi(argv[3]), std::stoi(argv[4]));
+
 	puts("Usage: encoder <inputFile> <outputVideo> <timeLimit> [fps]");
 #else
 	if (argc == 3)
 		return VideoToFile(argv[1], argv[2]);
+
 	puts("Usage: decoder <inputVideo> <outputFile>");
 #endif
+
 	return 1;
 }

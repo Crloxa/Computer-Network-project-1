@@ -216,22 +216,23 @@ namespace ImgParse
 
 		Mat ImgPreprocessing(const Mat& srcImg, float blurRate)
 		{
-			// 采用高斯增强和自适应二值化来应对 jpg 和 mp4 的压缩模糊
-			Mat gray, blurred, sharp, binary;
-			cvtColor(srcImg, gray, COLOR_BGR2GRAY);
-			GaussianBlur(gray, blurred, Size(3, 3), 0);
-			addWeighted(gray, 1.5, blurred, -0.5, 0, sharp);
+			// 高斯增强 自适应二值化
+			// cmake build fail because of annotation above wtf
+			cv::Mat gray, blurred, sharp, binary;
+			cv::cvtColor(srcImg, gray, cv::COLOR_BGR2GRAY);
+			cv::GaussianBlur(gray, blurred, cv::Size(3, 3), 0);
+			cv::addWeighted(gray, 1.5, blurred, -0.5, 0, sharp);
 
 			int threshold_val = blurRate > 1.0 ? (int)blurRate : 0;
 			if (threshold_val > 0) {
-				threshold(sharp, binary, threshold_val, 255, THRESH_BINARY);
+				cv::threshold(sharp, binary, threshold_val, 255, cv::THRESH_BINARY);
 			}
 			else {
-				threshold(sharp, binary, 0, 255, THRESH_BINARY | THRESH_OTSU);
+				cv::threshold(sharp, binary, 0, 255, cv::THRESH_BINARY | cv::THRESH_OTSU);
 			}
 
-			Mat kernel = getStructuringElement(MORPH_RECT, Size(3, 3));
-			morphologyEx(binary, binary, MORPH_CLOSE, kernel);
+			cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
+			cv::morphologyEx(binary, binary, cv::MORPH_CLOSE, kernel);
 			return binary;
 		}
 
@@ -549,6 +550,7 @@ namespace ImgParse
 		}
 
 		// 第三阶段做角点微调，得到最终矫正结果。
+		//
 		cv::resize(disImg, disImg, Size(OutputFrameSize, OutputFrameSize));
 
 		disImg.copyTo(temp);
