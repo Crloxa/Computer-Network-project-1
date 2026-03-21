@@ -27,7 +27,7 @@ namespace ImgParse
 
 		bool IsQrPoint(const vector<Point>& contour, const Mat& img);
 
-		Mat ImgPreprocessing(const Mat& srcImg,float blurRate);
+		Mat ImgPreprocessing(const Mat& srcImg, float blurRate);
 
 		bool ScreenQrPoint(const Mat& srcImg, vector<vector<Point>>& qrPoints);
 
@@ -63,7 +63,7 @@ namespace ImgParse
 
 	pair<float, float> CalExtendVec(const Point2f& poi0, const Point2f& poi1, const Point2f& poi2, float bias);
 
-	Mat CropParallelRect(const Mat& srcImg, const vector<Point2f>& srcPoints,Size size);
+	Mat CropParallelRect(const Mat& srcImg, const vector<Point2f>& srcPoints, Size size);
 
 	bool isRightlAngle(float angle);
 

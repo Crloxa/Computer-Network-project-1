@@ -48,10 +48,6 @@ int VideoToFile(const char* videoPath, const char* filePath)
 	std::filesystem::remove_all("inputImg", ec);
 	std::filesystem::create_directory("inputImg", ec);
 
-	// Creating debug directory to view pic.cpp returns
-	std::filesystem::remove_all("debugImg", ec);
-	std::filesystem::create_directory("debugImg", ec);
-
 	std::cout << "Extracting frames from video... Please wait." << std::endl;
 	FFMPEG::VideotoImage(videoPath, "inputImg", "jpg");
 	std::cout << "Frames extraction completed. Start decoding..." << std::endl;
@@ -76,8 +72,7 @@ int VideoToFile(const char* videoPath, const char* filePath)
 	std::vector<unsigned char> outputFile;
 	bool hasStarted = false;
 	bool ret = 0;
-	std::set<int> parsedFrames;
-	int debug_counter = 0; // Counter for saving images
+	std::set<int> parsedFrames; // 记录已解析的帧，防止同一帧多次加入
 
 	for (const auto& imgName : imageFiles)
 	{
@@ -85,10 +80,10 @@ int VideoToFile(const char* videoPath, const char* filePath)
 		if (srcImg.empty()) continue;
 
 		cv::Mat disImg;
-		// Calls pic.cpp parsed logic
+		// 调用原版 pic.cpp 的解析
 		if (ImgParse::Main(srcImg, disImg))
 		{
-			// Bypass logic if frame parsing fails
+			// 如果由于没有边框等原因矫正失败，直接将其原图或缩放交给解码器
 			if (srcImg.rows == ImageDecode::FrameSize && srcImg.cols == ImageDecode::FrameSize) {
 				disImg = srcImg;
 			}
@@ -96,17 +91,11 @@ int VideoToFile(const char* videoPath, const char* filePath)
 				cv::resize(srcImg, disImg, cv::Size(ImageDecode::FrameSize, ImageDecode::FrameSize), 0.0, 0.0, cv::INTER_NEAREST);
 			}
 		}
-		else
-		{
-			// Save the returned frame image into the debug directory for visual inspection
-			std::string dbgPath = "debugImg/frame_" + std::to_string(debug_counter++) + ".png";
-			cv::imwrite(dbgPath, disImg);
-		}
 
 		ImageDecode::ImageInfo imageInfo;
 		if (ImageDecode::Main(disImg, imageInfo))
 		{
-			continue;
+			continue; // 解码失败，直接看下一张图
 		}
 
 		if (!hasStarted)
@@ -117,9 +106,11 @@ int VideoToFile(const char* videoPath, const char* filePath)
 			else continue;
 		}
 
+		// 因为视频抽出来的多张图属于同一个逻辑帧，过滤掉重复帧
 		if (parsedFrames.count(imageInfo.FrameBase) > 0)
 			continue;
 
+		// 这里去掉了原本严苛的报错跳出逻辑。如果有丢帧，只打印警告，依然继续解析！
 		if (precode != -1 && ((precode + 1) & UINT16_MAX) != imageInfo.FrameBase)
 		{
 			std::cerr << "Warning: Possible skipped logic frame. Expected " << ((precode + 1) & UINT16_MAX)
@@ -149,7 +140,6 @@ int VideoToFile(const char* videoPath, const char* filePath)
 		fclose(fp);
 
 		std::filesystem::remove_all("inputImg", ec);
-		// Keep debugImg dir around for later observation
 		return 0;
 	}
 
