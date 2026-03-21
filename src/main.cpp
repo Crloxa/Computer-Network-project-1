@@ -4,6 +4,7 @@
 #include "pic.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <climits>
 #include <cstdint>
@@ -30,8 +31,7 @@ namespace
             << "  Project1 encode-video <input_file> <output_video> [duration_ms] [fps]\n"
             << "  Project1 decode-image <input_image> <output_file>\n"
             << "  Project1 decode-dir <input_dir> <output_file>\n"
-            << "  Project1 decode-video <input_video> <output_file>\n"
-            << "  Project1 decode-video-v <input_video> <output_file> <validity_file>\n";
+            << "  Project1 decode - video <input_video> <output_file>[validity_file]\n";
     }
 
     int ParsePositiveInt(const char* value)
@@ -229,10 +229,10 @@ namespace
         }
 
         Code::Main(inputBytes.data(),
-                   static_cast<int>(inputBytes.size()),
-                   frameDir.string().c_str(),
-                   "png",
-                   static_cast<int>(1LL * fps * durationMs / 1000));
+            static_cast<int>(inputBytes.size()),
+            frameDir.string().c_str(),
+            "png",
+            static_cast<int>(1LL * fps * durationMs / 1000));
 
         if (FFMPEG::ImagetoVideo(frameDir.string().c_str(), "png", videoPath, fps, 60, 100000) != 0)
         {
@@ -284,10 +284,9 @@ namespace
         return DecodeImageSequence(imagePaths, outputFile) ? 0 : 1;
     }
 
-    // Extract video frames into a temporary directory and return their sorted paths.
-    // Returns false (and joins the extractor thread) on failure.
+    // 修复版：先完成抽帧，再统一扫描目录，避免并发下漏帧/乱序
     bool ExtractVideoFrames(const char* inputVideo, const fs::path& frameDir,
-                            std::vector<fs::path>& imagePaths)
+        std::vector<fs::path>& imagePaths)
     {
         std::error_code ec;
         fs::remove_all(frameDir, ec);
@@ -298,38 +297,39 @@ namespace
             return false;
         }
 
-        bool extractionDone = false;
-        int extractionResult = 0;
+        std::atomic<bool> extractionDone{ false };
+        std::atomic<int> extractionResult{ 0 };
+
         std::thread extractor([&]()
-        {
-            extractionResult = FFMPEG::VideotoImage(inputVideo, frameDir.string().c_str(), "jpg");
-            extractionDone = true;
-        });
-
-        for (int index = 1;; ++index)
-        {
-            char fileName[64];
-            std::snprintf(fileName, sizeof(fileName), "%05d.jpg", index);
-            const fs::path imagePath = frameDir / fileName;
-
-            while (!fs::exists(imagePath) && !extractionDone)
             {
-                std::this_thread::yield();
-            }
-
-            if (!fs::exists(imagePath))
-            {
-                break;
-            }
-            imagePaths.push_back(imagePath);
-        }
+                const int ret = FFMPEG::VideotoImage(inputVideo, frameDir.string().c_str(), "png");
+                extractionResult.store(ret, std::memory_order_release);
+                extractionDone.store(true, std::memory_order_release);
+            });
 
         extractor.join();
-        if (extractionResult != 0)
+
+        if (!extractionDone.load(std::memory_order_acquire))
+        {
+            std::cerr << "error: extractor thread finished unexpectedly\n";
+            return false;
+        }
+        if (extractionResult.load(std::memory_order_acquire) != 0)
         {
             std::cerr << "error: ffmpeg failed while extracting video frames\n";
             return false;
         }
+
+        imagePaths.clear();
+        for (const auto& entry : fs::directory_iterator(frameDir))
+        {
+            if (entry.is_regular_file() && IsImageFile(entry.path()))
+            {
+                imagePaths.push_back(entry.path());
+            }
+        }
+        std::sort(imagePaths.begin(), imagePaths.end());
+
         return true;
     }
 
@@ -350,14 +350,9 @@ namespace
         return DecodeImageSequence(imagePaths, outputFile) ? 0 : 1;
     }
 
-    // Decode a video with best-effort partial recovery.
-    // Produces out.bin (decoded bytes) and vout.bin (validity markers).
-    // vout.bin has the same byte count as out.bin; each byte is 0xFF if the
-    // corresponding output byte came from a frame that passed checksum, 0x00
-    // if the frame was missing or corrupted.
     int DecodeVideoWithValidity(const char* inputVideo,
-                                const char* outputFile,
-                                const char* validityFile)
+        const char* outputFile,
+        const char* validityFile)
     {
         const fs::path frameDir = "inputImg_decode";
         std::vector<fs::path> imagePaths;
@@ -371,8 +366,6 @@ namespace
             return 1;
         }
 
-        // Collect all uniquely decodable frames, keyed by frame number.
-        // Use a std::map so iteration is in frame-number order for diagnostics.
         std::map<uint16_t, ImageDecode::ImageInfo> frameMap;
         uint16_t startFrameNo = 0;
         uint16_t endFrameNo = 0;
@@ -390,7 +383,7 @@ namespace
             const uint16_t fn = imageInfo.FrameBase;
             if (frameMap.count(fn) != 0)
             {
-                continue; // duplicate frame
+                continue;
             }
 
             if (imageInfo.IsStart)
@@ -406,7 +399,7 @@ namespace
 
             frameMap[fn] = std::move(imageInfo);
             std::cout << "Decoded frame " << fn
-                      << " from " << imagePath.filename().string() << '\n';
+                << " from " << imagePath.filename().string() << '\n';
         }
 
         if (!foundStart)
@@ -418,13 +411,9 @@ namespace
             return 0;
         }
 
-        // Determine the range of frame numbers to assemble.
-        // If end not found, assemble up to the last seen frame number.
         if (!foundEnd)
         {
             std::cerr << "warning: no end frame found; output may be incomplete\n";
-            // Use the last frame number seen after (or at) start.
-            // Walk forward from start to find the highest contiguous frame.
             endFrameNo = startFrameNo;
             for (const auto& kv : frameMap)
             {
@@ -440,7 +429,6 @@ namespace
             }
         }
 
-        // Assemble output frame by frame from startFrameNo to endFrameNo.
         const uint32_t totalFrames =
             (static_cast<uint32_t>(endFrameNo) - startFrameNo + 65536u) % 65536u + 1u;
 
@@ -461,9 +449,6 @@ namespace
             }
             else
             {
-                // Missing frame: fill placeholder zeros and mark invalid.
-                // BytesPerFrame is the worst-case payload size; the evaluator
-                // ignores bytes marked invalid in the validity file.
                 const std::size_t fillLen =
                     static_cast<std::size_t>(ImageDecode::BytesPerFrame);
                 outputBytes.insert(outputBytes.end(), fillLen, 0x00);
@@ -488,14 +473,12 @@ namespace
         return 0;
     }
 
-    // Standalone encoder: encode <input_file> <output_video> <max_duration_ms>
     int RunEncoder(const char* inputFile, const char* outputVideo, int durationMs)
     {
         constexpr int kDefaultFps = 15;
         return EncodeToVideo(inputFile, outputVideo, durationMs, kDefaultFps);
     }
 
-    // Standalone decoder: decode <input_video> <output_file> <validity_file>
     int RunDecoder(const char* inputVideo, const char* outputFile, const char* validityFile)
     {
         return DecodeVideoWithValidity(inputVideo, outputFile, validityFile);
@@ -504,9 +487,6 @@ namespace
 
 int main(int argc, char* argv[])
 {
-    // Detect standalone encoder/decoder invocation by executable name.
-    // When the executable is named (or symlinked as) "encode"/"decode" the
-    // new interface is used: positional args without a leading subcommand.
     const std::string exeName = std::filesystem::path(argv[0]).stem().string();
     if (exeName == "encode")
     {
@@ -586,12 +566,16 @@ int main(int argc, char* argv[])
 
     if (command == "decode-video")
     {
-        if (argc != 4)
+        if (argc == 4)
         {
-            PrintUsage();
-            return 1;
+            return DecodeVideo(argv[2], argv[3]);
         }
-        return DecodeVideo(argv[2], argv[3]);
+        if (argc == 5)
+        {
+            return DecodeVideoWithValidity(argv[2], argv[3], argv[4]);
+        }
+        PrintUsage();
+        return 1;
     }
 
     if (command == "decode-video-v")
