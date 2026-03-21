@@ -85,7 +85,7 @@ namespace ImgParse
 		float x1 = poi0.x - poi2.x, y1 = poi0.y - poi2.y;
 		float x2 = (poi0.x - poi1.x) * rate, y2 = (poi0.y - poi1.y) * rate;
 		float totx = x1 + x2, toty = y1 + y2, distot = sqrt(totx * totx + toty * toty);
-		if (distot < 1e-5) return { 0, 0 }; // 防止除 0 崩溃
+		if (distot < 1e-5) return { 0, 0 }; // 防止除 0 崩溃//
 		//
 		return { totx / distot * bias, toty / distot * bias };
 	}
@@ -519,7 +519,7 @@ namespace ImgParse
 
 	void dfs(int i, int j, int limi, int limj, int* dir, bool(*ispass)[CornerSearchSize], const Mat& mat)
 	{
-		if (i < 0 || i >= mat.rows || j < 0 || j >= mat.cols) return; // 边界保护
+		if (i < 0 || i >= mat.rows || j < 0 || j >= mat.cols) return; // 边界保护//
 		//
 		if ((limi - i) * dir[0] > 0 || (limj - j) * dir[1] > 0) return;
 		if ((limi - i) * dir[0] <= -CornerSearchSize || (limj - j) * dir[1] <= -CornerSearchSize) return;

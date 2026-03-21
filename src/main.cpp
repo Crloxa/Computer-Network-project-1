@@ -48,6 +48,9 @@ int VideoToFile(const char* videoPath, const char* filePath)
 	std::filesystem::remove_all("inputImg", ec);
 	std::filesystem::create_directory("inputImg", ec);
 
+	// [新增] 创建存放处理后图片的文件夹，如果存在则不报错//
+	std::filesystem::create_directory("pic_output", ec);
+
 	std::cout << "Extracting frames from video... Please wait." << std::endl;
 	FFMPEG::VideotoImage(videoPath, "inputImg", "jpg");
 	std::cout << "Frames extraction completed. Start decoding..." << std::endl;
@@ -72,7 +75,7 @@ int VideoToFile(const char* videoPath, const char* filePath)
 	std::vector<unsigned char> outputFile;
 	bool hasStarted = false;
 	bool ret = 0;
-	std::set<int> parsedFrames; // 记录已解析的帧，防止同一帧多次加入
+	std::set<int> parsedFrames; // 记录已解析的帧，防止同一帧多次加入//
 
 	for (const auto& imgName : imageFiles)
 	{
@@ -83,7 +86,7 @@ int VideoToFile(const char* videoPath, const char* filePath)
 		// 调用原版 pic.cpp 的解析
 		if (ImgParse::Main(srcImg, disImg))
 		{
-			// 如果由于没有边框等原因矫正失败，直接将其原图或缩放交给解码器
+			// 如果由于没有边框等原因矫正失败，直接将其原图或缩放交给解码器//
 			if (srcImg.rows == ImageDecode::FrameSize && srcImg.cols == ImageDecode::FrameSize) {
 				disImg = srcImg;
 			}
@@ -92,10 +95,18 @@ int VideoToFile(const char* videoPath, const char* filePath)
 			}
 		}
 
+		// [新增] 保存经过 pic.cpp 处理（矫正/裁剪/二值化）后的图片用于测试//
+		{
+			std::filesystem::path p(imgName);
+			std::string filename = p.filename().string();
+			std::string outputPath = "pic_output/" + filename;
+			cv::imwrite(outputPath, disImg);
+		}
+
 		ImageDecode::ImageInfo imageInfo;
 		if (ImageDecode::Main(disImg, imageInfo))
 		{
-			continue; // 解码失败，直接看下一张图
+			continue; // 解码失败，直接看下一张图//
 		}
 
 		if (!hasStarted)
@@ -107,10 +118,12 @@ int VideoToFile(const char* videoPath, const char* filePath)
 		}
 
 		// 因为视频抽出来的多张图属于同一个逻辑帧，过滤掉重复帧
+		//
 		if (parsedFrames.count(imageInfo.FrameBase) > 0)
 			continue;
 
 		// 这里去掉了原本严苛的报错跳出逻辑。如果有丢帧，只打印警告，依然继续解析！
+		//
 		if (precode != -1 && ((precode + 1) & UINT16_MAX) != imageInfo.FrameBase)
 		{
 			std::cerr << "Warning: Possible skipped logic frame. Expected " << ((precode + 1) & UINT16_MAX)
