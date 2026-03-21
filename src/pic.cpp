@@ -13,7 +13,7 @@ namespace ImgParse {
         double area;
     };
 
-    // 安全获取最大轮廓子节点
+    // 在层级树中寻找面积最大的子轮廓
     //
     int findLargestChild(int parentIdx, const vector<vector<Point>>& contours, const vector<Vec4i>& hierarchy) {
         int max_idx = -1;
@@ -25,30 +25,33 @@ namespace ImgParse {
                 max_area = area;
                 max_idx = child;
             }
-            child = hierarchy[child][0]; // 遍历同层节点
-            //
+            child = hierarchy[child][0];
         }
         return max_idx;
     }
 
     bool Main(const cv::Mat& srcImg, cv::Mat& disImg) {
-        if (srcImg.empty()) return true;
+        if (srcImg.empty()) return false;
 
-        Mat gray;
+        Mat gray, blurred;
         cvtColor(srcImg, gray, COLOR_BGR2GRAY);
 
-        // 首先进行二值化，采用 OTSU 大津法自动寻找黑白界限
+        // 高斯模糊降低残影和视频压缩带来的高频噪点
         //
-        Mat binary;
-        threshold(gray, binary, 0, 255, THRESH_BINARY_INV | THRESH_OTSU);
+        GaussianBlur(gray, blurred, Size(5, 5), 0);
+
+        // 针对录屏的光照不均问题，采用自适应阈值提取轮廓，抗干扰极强
+        //
+        Mat binaryForContours;
+        adaptiveThreshold(blurred, binaryForContours, 255, ADAPTIVE_THRESH_GAUSSIAN_C, THRESH_BINARY_INV, 31, 10);
 
         vector<vector<Point>> contours;
         vector<Vec4i> hierarchy;
-        findContours(binary, contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE);
+        findContours(binaryForContours, contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE);
 
         vector<Marker> markers;
 
-        // 1. 尝试寻找三层回字形嵌套轮廓，对抗物理摄像头畸变拍摄
+        // 寻找 3 层嵌套的回字型轮廓
         //
         for (size_t i = 0; i < contours.size(); ++i) {
             int c1 = findLargestChild(i, contours, hierarchy);
@@ -60,14 +63,14 @@ namespace ImgParse {
             double area1 = contourArea(contours[c1]);
             double area2 = contourArea(contours[c2]);
 
-            if (area0 < 10) continue;
+            if (area0 < 15) continue;
 
             double r01 = area0 / max(area1, 1.0);
             double r12 = area1 / max(area2, 1.0);
 
-            // 依据 code.cpp 中 QrPoint 特征设定的物理比例 (容错放宽，防压缩形变)
+            // 依据大定位点的比例放宽条件，兼容一定的透视变形
             //
-            if (r01 > 1.1 && r01 < 6.0 && r12 > 1.1 && r12 < 6.0) {
+            if (r01 > 1.2 && r01 < 8.0 && r12 > 1.2 && r12 < 8.0) {
                 Moments M = moments(contours[i]);
                 if (M.m00 != 0) {
                     markers.push_back({ Point2f(M.m10 / M.m00, M.m01 / M.m00), area0 });
@@ -75,7 +78,7 @@ namespace ImgParse {
             }
         }
 
-        // 剔除重复的识别噪点
+        // 合并离得太近的噪点重心
         //
         vector<Marker> uniqueMarkers;
         for (const auto& m : markers) {
@@ -99,14 +102,14 @@ namespace ImgParse {
         bool usePerspective = false;
         Mat transformMatrix;
 
-        // 找到了定位点，执行透视校正
+        // 找到了足够的定位点，进入几何约束验证阶段
         //
         if (markers.size() >= 3) {
             sort(markers.begin(), markers.end(), [](const Marker& a, const Marker& b) {
                 return a.area > b.area;
                 });
 
-            // 寻找包含直角的左上角点
+            // 找直角定点 (即左上角 TL)
             //
             double maxDist = 0;
             int rightAngleIdx = -1;
@@ -124,95 +127,109 @@ namespace ImgParse {
             Point2f pt1 = markers[(rightAngleIdx + 1) % 3].center;
             Point2f pt2 = markers[(rightAngleIdx + 2) % 3].center;
 
-            // 使用向量叉积辨别右上角与左下角
+            // 严格几何约束：两条直角边长度必须接近，否则判定为找错了点，拒绝该帧！
             //
-            Point2f v1 = pt1 - TL;
-            Point2f v2 = pt2 - TL;
-            double cross = v1.x * v2.y - v1.y * v2.x;
+            double len1 = norm(pt1 - TL);
+            double len2 = norm(pt2 - TL);
+            double legRatio = len1 / max(len2, 1.0);
 
-            Point2f TR, BL;
-            if (cross > 0) { TR = pt1; BL = pt2; }
-            else { TR = pt2; BL = pt1; }
+            if (legRatio > 0.5 && legRatio < 2.0) {
 
-            // 推导可能缺少的右下角点
-            //
-            Point2f BR;
-            bool foundBR = false;
-            Point2f expectedBR = TR + BL - TL;
+                // 向量叉积识别右上角与左下角
+                //
+                Point2f v1 = pt1 - TL;
+                Point2f v2 = pt2 - TL;
+                double cross = v1.x * v2.y - v1.y * v2.x;
 
-            if (markers.size() > 3) {
-                double minDist = 1e9;
-                for (size_t i = 3; i < markers.size(); ++i) {
-                    double d = norm(markers[i].center - expectedBR);
-                    if (d < minDist) {
-                        minDist = d;
-                        BR = markers[i].center;
+                Point2f TR, BL;
+                if (cross > 0) { TR = pt1; BL = pt2; }
+                else { TR = pt2; BL = pt1; }
+
+                // 推导可能缺少的右下角点
+                //
+                Point2f BR;
+                bool foundBR = false;
+                Point2f expectedBR = TR + BL - TL;
+
+                if (markers.size() > 3) {
+                    double minDist = 1e9;
+                    for (size_t i = 3; i < markers.size(); ++i) {
+                        double d = norm(markers[i].center - expectedBR);
+                        if (d < minDist) {
+                            minDist = d;
+                            BR = markers[i].center;
+                        }
+                    }
+                    if (minDist < norm(TR - TL) * 0.4) {
+                        foundBR = true;
                     }
                 }
-                if (minDist < norm(TR - TL) * 0.4) {
-                    foundBR = true;
-                }
+                if (!foundBR) BR = expectedBR;
+
+                vector<Point2f> srcPoints = { TL, TR, BR, BL };
+                vector<Point2f> dstPoints = {
+                    Point2f(10.0f, 10.0f),
+                    Point2f(122.0f, 10.0f),
+                    foundBR ? Point2f(126.0f, 126.0f) : Point2f(122.0f, 122.0f),
+                    Point2f(10.0f, 122.0f)
+                };
+
+                transformMatrix = getPerspectiveTransform(srcPoints, dstPoints);
+                usePerspective = true;
             }
-            if (!foundBR) BR = expectedBR;
-
-            vector<Point2f> srcPoints = { TL, TR, BR, BL };
-            vector<Point2f> dstPoints = {
-                Point2f(10.0f, 10.0f),
-                Point2f(122.0f, 10.0f),
-                foundBR ? Point2f(126.0f, 126.0f) : Point2f(122.0f, 122.0f),
-                Point2f(10.0f, 122.0f)
-            };
-
-            transformMatrix = getPerspectiveTransform(srcPoints, dstPoints);
-            usePerspective = true;
         }
 
-        // ========================================== //
-        // 2. 根据特征点寻找情况，执行二选一图像渲染策略
-        // ========================================== //
+        // ==========================================
+        // 方案一：执行带透视校正的图像渲染
+        // ==========================================
+        //
         if (usePerspective) {
-            // [策略A：相机物理拍摄模式]
-            //
-            Mat warpedImg;
-            warpPerspective(srcImg, warpedImg, transformMatrix, Size(133, 133), INTER_LINEAR);
+            Mat grayWarped;
 
-            Mat grayWarped, binWarped;
-            cvtColor(warpedImg, grayWarped, COLOR_BGR2GRAY);
+            // 关键优化：先将纯灰度图拉平，不带有任何二值化噪点
+            //
+            warpPerspective(gray, grayWarped, transformMatrix, Size(133, 133), INTER_LINEAR);
+
+            Mat binWarped;
+            // 在拉平后的 133x133 完美子区域内执行大津法，彻底屏蔽背景亮度干扰，有效对抗残影
+            //
             threshold(grayWarped, binWarped, 0, 255, THRESH_BINARY | THRESH_OTSU);
+
             cvtColor(binWarped, disImg, COLOR_GRAY2BGR);
+            return true;
         }
+        // ==========================================
+        // 方案二：针对没有变形的标准压制视频，执行纯数字采样
+        // ==========================================
+        //
         else {
-            // [策略B：标准视频提取模式 (无物理透视)]
-            // 应对你现在测试的 FFMPEG 生成件，绕过糟糕的 resize INTER_NEAREST 边缘抖动！
-            // 采用完美核心采样点提取，直接净化视频噪点！
-            //
-            disImg.create(133, 133, CV_8UC3);
+            double aspect = (double)srcImg.cols / srcImg.rows;
+            if (aspect > 0.95 && aspect < 1.05 && srcImg.cols > 266) {
+                disImg.create(133, 133, CV_8UC3);
 
-            Mat binRaw;
-            // 原图大图二值化去除压缩杂色
-            //
-            threshold(gray, binRaw, 0, 255, THRESH_BINARY | THRESH_OTSU);
+                Mat binRaw;
+                threshold(gray, binRaw, 0, 255, THRESH_BINARY | THRESH_OTSU);
 
-            float stepX = (float)srcImg.cols / 133.0f;
-            float stepY = (float)srcImg.rows / 133.0f;
+                float stepX = (float)srcImg.cols / 133.0f;
+                float stepY = (float)srcImg.rows / 133.0f;
 
-            for (int r = 0; r < 133; ++r) {
-                for (int c = 0; c < 133; ++c) {
-                    // c + 0.5f：强制游标走到每一个 10x10 色块的核心正中间进行采集
-                    //
-                    int px = std::min(static_cast<int>((c + 0.5f) * stepX), srcImg.cols - 1);
-                    int py = std::min(static_cast<int>((r + 0.5f) * stepY), srcImg.rows - 1);
+                for (int r = 0; r < 133; ++r) {
+                    for (int c = 0; c < 133; ++c) {
 
-                    uint8_t val = binRaw.at<uint8_t>(py, px);
-                    // 直接向解码器注入 CV_8UC3 的二极化纯净颜色
-                    //
-                    disImg.at<Vec3b>(r, c) = val ? Vec3b(255, 255, 255) : Vec3b(0, 0, 0);
+                        // 强制取中心点避免边缘模糊
+                        //
+                        int px = std::min(static_cast<int>((c + 0.5f) * stepX), srcImg.cols - 1);
+                        int py = std::min(static_cast<int>((r + 0.5f) * stepY), srcImg.rows - 1);
+
+                        uint8_t val = binRaw.at<uint8_t>(py, px);
+                        disImg.at<Vec3b>(r, c) = val ? Vec3b(255, 255, 255) : Vec3b(0, 0, 0);
+                    }
                 }
+                return true;
             }
         }
 
-        // 永远返回 false (0) 成功接管处理流，阻止外层的有害降级。
-        // 这也会确保你在 pic_output 文件夹内看到生成得十分完美的纯黑白采样图像。
+        // 无法识别也无法直接采样，返回 false 抛弃该失真帧
         //
         return false;
     }
