@@ -31,7 +31,7 @@ namespace
             << "  Project1 encode-video <input_file> <output_video> [duration_ms] [fps]\n"
             << "  Project1 decode-image <input_image> <output_file>\n"
             << "  Project1 decode-dir <input_dir> <output_file>\n"
-            << "  Project1 decode - video <input_video> <output_file>[validity_file]\n";
+            << "  Project1 decode-video <input_video> <output_file>\n";
     }
 
     int ParsePositiveInt(const char* value)
@@ -566,16 +566,12 @@ int main(int argc, char* argv[])
 
     if (command == "decode-video")
     {
-        if (argc == 4)
+        if (argc != 4)
         {
-            return DecodeVideo(argv[2], argv[3]);
+            PrintUsage();
+            return 1;
         }
-        if (argc == 5)
-        {
-            return DecodeVideoWithValidity(argv[2], argv[3], argv[4]);
-        }
-        PrintUsage();
-        return 1;
+        return DecodeVideo(argv[2], argv[3]);
     }
 
     if (command == "decode-video-v")
