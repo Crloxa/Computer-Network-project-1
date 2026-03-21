@@ -99,12 +99,12 @@ int VideoToFile(const char* videoPath, const char* filePath)
 
 		// 保存成功解析并裁剪后的图片
 		// //
-		{
-			std::filesystem::path p(imgName);
-			std::string filename = p.filename().string();
-			std::string outputPath = "pic_output/" + filename;
-			cv::imwrite(outputPath, disImg);
-		}
+		//{
+		//	std::filesystem::path p(imgName);
+		//	std::string filename = p.filename().string();
+		//	std::string outputPath = "pic_output/" + filename;
+		//	cv::imwrite(outputPath, disImg);
+		//}
 
 		ImageDecode::ImageInfo imageInfo;
 		if (ImageDecode::Main(disImg, imageInfo))

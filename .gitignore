@@ -1,6 +1,5 @@
 # Visual Studio 临时文件
 .vs/
-bin/
 /GroupTest/src/.vs/
 [Dd]ebug/
 [Rr]elease/

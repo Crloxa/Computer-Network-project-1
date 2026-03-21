@@ -1,0 +1,2 @@
+.\encoder exp1.jpg exp2.mp4 10000 10
+.\decoder test.mp4 test.jpg
