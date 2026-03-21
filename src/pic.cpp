@@ -120,7 +120,8 @@ namespace ImgParse
 			ParseInfo(const vector<Point>& pointSet) :
 				Center(CalRectCenter(pointSet)),
 				size(pointSet.size()),
-				Rect(minAreaRect(pointSet)) {}
+				Rect(minAreaRect(pointSet)) {
+			}
 			ParseInfo() = default;
 		};
 
@@ -136,7 +137,7 @@ namespace ImgParse
 
 		bool IsQrBWRateLegal(const float rate)
 		{
-            // 放宽判断容错
+			// 放宽判断容错
 			return rate < MaxQRBWRate + 0.5 && rate > MinQRBWRate - 0.2;
 		}
 
@@ -215,21 +216,22 @@ namespace ImgParse
 
 		Mat ImgPreprocessing(const Mat& srcImg, float blurRate)
 		{
-            // 采用高斯增强和自适应二值化来应对 jpg 和 mp4 的压缩模糊
+			// 采用高斯增强和自适应二值化来应对 jpg 和 mp4 的压缩模糊
 			Mat gray, blurred, sharp, binary;
 			cvtColor(srcImg, gray, COLOR_BGR2GRAY);
 			GaussianBlur(gray, blurred, Size(3, 3), 0);
 			addWeighted(gray, 1.5, blurred, -0.5, 0, sharp);
-            
-            int threshold_val = blurRate > 1.0 ? (int)blurRate : 0;
-            if(threshold_val > 0) {
-                threshold(sharp, binary, threshold_val, 255, THRESH_BINARY);
-            } else {
-                threshold(sharp, binary, 0, 255, THRESH_BINARY | THRESH_OTSU);
-            }
-            
-            Mat kernel = getStructuringElement(MORPH_RECT, Size(3, 3));
-            morphologyEx(binary, binary, MORPH_CLOSE, kernel);
+
+			int threshold_val = blurRate > 1.0 ? (int)blurRate : 0;
+			if (threshold_val > 0) {
+				threshold(sharp, binary, threshold_val, 255, THRESH_BINARY);
+			}
+			else {
+				threshold(sharp, binary, 0, 255, THRESH_BINARY | THRESH_OTSU);
+			}
+
+			Mat kernel = getStructuringElement(MORPH_RECT, Size(3, 3));
+			morphologyEx(binary, binary, MORPH_CLOSE, kernel);
 			return binary;
 		}
 
@@ -246,8 +248,8 @@ namespace ImgParse
 				if (hierarchy[i][2] != -1 && ic == 0) { parentIdx = i; ic++; }
 				else if (hierarchy[i][2] != -1) { ic++; }
 				else if (hierarchy[i][2] == -1) { ic = 0; parentIdx = -1; }
-                
-                // 压缩视频可能会损失嵌套层级
+
+				// 压缩视频可能会损失嵌套层级
 				if (ic >= 1)
 				{
 					if (IsQrPoint(contours[parentIdx], srcImg)) qrPoints.push_back(contours[parentIdx]);
@@ -324,7 +326,7 @@ namespace ImgParse
 		bool Main(const Mat& srcImg, vector<vector<Point>>& qrPoints)
 		{
 			vector<vector<Point>> qrPointsTemp;
-            std::array<float, 6> thresholds = { -1.0, 100.0, 127.0, 150.0, 180.0, 80.0 };
+			std::array<float, 6> thresholds = { -1.0, 100.0, 127.0, 150.0, 180.0, 80.0 };
 			for (auto th : thresholds)
 			{
 				if (!ScreenQrPoint(ImgPreprocessing(srcImg, th), qrPointsTemp))
@@ -487,7 +489,7 @@ namespace ImgParse
 		return ret;
 	}
 
-    // ★ 关键的下采样函数，不应该被删掉！它负责把大图压缩回 133x133 给解码器
+	// ★ 关键的下采样函数，不应该被删掉！它负责把大图压缩回 133x133 给解码器
 	void Resize(Mat& mat)
 	{
 		Mat temp = Mat(LogicalFrameSize, LogicalFrameSize, CV_8UC3);
@@ -537,8 +539,8 @@ namespace ImgParse
 
 		// 第二阶段裁剪，进一步消除映射误差。
 		PointsInfo.clear();
-        
-        // ★ 修复的越界 Bug 点：失败了不能 return 0，而是保留第一阶段拉伸结果继续往下走
+
+		// ★ 修复的越界 Bug 点：失败了不能 return 0，而是保留第一阶段拉伸结果继续往下走
 		if (!QrcodeParse::Main(temp, PointsInfo) && PointsInfo.size() >= 4)
 		{
 			if (!FindForthPoint(PointsInfo)) {
@@ -547,18 +549,18 @@ namespace ImgParse
 		}
 
 		// 第三阶段做角点微调，得到最终矫正结果。
+		cv::resize(disImg, disImg, Size(OutputFrameSize, OutputFrameSize));
+
 		disImg.copyTo(temp);
-		cv::resize(temp, temp, Size(OutputFrameSize, OutputFrameSize));
 		GetVec(temp);
 		auto poi4 = FindConner(temp);
 		if (poi4.size() == 4) {
-            cv::resize(disImg, disImg, Size(OutputFrameSize, OutputFrameSize));
-            temp = CropParallelRect(disImg, poi4, Size(OutputFrameSize, OutputFrameSize));
-            disImg = temp;
-        }
+			// 如果找到了角点，再做一次微小的透视矫正
+			disImg = CropParallelRect(disImg, poi4, Size(OutputFrameSize, OutputFrameSize));
+		}
 
 		GetVec(disImg);
-		Resize(disImg); // ★ 缩小回 133x133
+		Resize(disImg); // ★ 缩小回 133x133 (此时 disImg 绝对是 1330x1330，不再越界)
 		return 0;
 	}
 }
