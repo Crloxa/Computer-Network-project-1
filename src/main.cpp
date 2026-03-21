@@ -48,7 +48,8 @@ int VideoToFile(const char* videoPath, const char* filePath)
 	std::filesystem::remove_all("inputImg", ec);
 	std::filesystem::create_directory("inputImg", ec);
 
-	// [新增] 创建存放处理后图片的文件夹，如果存在则不报错//
+	// [保留] 创建存放处理后图片的文件夹
+	// //
 	std::filesystem::create_directory("pic_output", ec);
 
 	std::cout << "Extracting frames from video... Please wait." << std::endl;
@@ -75,7 +76,7 @@ int VideoToFile(const char* videoPath, const char* filePath)
 	std::vector<unsigned char> outputFile;
 	bool hasStarted = false;
 	bool ret = 0;
-	std::set<int> parsedFrames; // 记录已解析的帧，防止同一帧多次加入//
+	std::set<int> parsedFrames;
 
 	for (const auto& imgName : imageFiles)
 	{
@@ -83,19 +84,21 @@ int VideoToFile(const char* videoPath, const char* filePath)
 		if (srcImg.empty()) continue;
 
 		cv::Mat disImg;
-		// 调用原版 pic.cpp 的解析
-		if (ImgParse::Main(srcImg, disImg))
+		// 调用 pic.cpp 的解析
+		//
+		bool parseSuccess = ImgParse::Main(srcImg, disImg);
+
+		if (!parseSuccess)
 		{
-			// 如果由于没有边框等原因矫正失败，直接将其原图或缩放交给解码器//
-			if (srcImg.rows == ImageDecode::FrameSize && srcImg.cols == ImageDecode::FrameSize) {
-				disImg = srcImg;
-			}
-			else {
-				cv::resize(srcImg, disImg, cv::Size(ImageDecode::FrameSize, ImageDecode::FrameSize), 0.0, 0.0, cv::INTER_NEAREST);
-			}
+			// [重要修改] 如果 pic.cpp 解析失败（找不到3个角点），直接跳过此帧！
+			// 绝对不能把 srcImg 强制 resize 后当作成品图，那是一团乱码，毫无意义。
+			// 录制视频中丢几帧是正常的，只要不是所有帧都丢就行。
+			//
+			continue;
 		}
 
-		// [新增] 保存经过 pic.cpp 处理（矫正/裁剪/二值化）后的图片用于测试//
+		// 保存成功解析并裁剪后的图片
+		// //
 		{
 			std::filesystem::path p(imgName);
 			std::string filename = p.filename().string();
@@ -106,7 +109,9 @@ int VideoToFile(const char* videoPath, const char* filePath)
 		ImageDecode::ImageInfo imageInfo;
 		if (ImageDecode::Main(disImg, imageInfo))
 		{
-			continue; // 解码失败，直接看下一张图//
+			std::cout << "decode failed" << std::endl;
+			continue; // 解码内容失败
+			//
 		}
 
 		if (!hasStarted)
@@ -117,13 +122,9 @@ int VideoToFile(const char* videoPath, const char* filePath)
 			else continue;
 		}
 
-		// 因为视频抽出来的多张图属于同一个逻辑帧，过滤掉重复帧
-		//
 		if (parsedFrames.count(imageInfo.FrameBase) > 0)
 			continue;
 
-		// 这里去掉了原本严苛的报错跳出逻辑。如果有丢帧，只打印警告，依然继续解析！
-		//
 		if (precode != -1 && ((precode + 1) & UINT16_MAX) != imageInfo.FrameBase)
 		{
 			std::cerr << "Warning: Possible skipped logic frame. Expected " << ((precode + 1) & UINT16_MAX)
