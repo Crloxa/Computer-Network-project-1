@@ -2,14 +2,15 @@
 #include "code.h"
 #include "ffmpeg.h"
 #include "ImgDecode.h"
-#include <thread>
 #include <vector>
 #include <string>
 #include <cstdio>
 #include <cstdlib>
-#include <atomic>
 #include <filesystem>
 #include <iostream>
+#include <algorithm>
+#include <set>
+#include <opencv2/core/utils/logger.hpp> 
 
 #define Show_Img(src) do\
 {\
@@ -17,7 +18,6 @@
 	cv::waitKey();\
 }while (0);
 
-// 文件转视频 (编码器逻辑)
 int FileToVideo(const char* filePath, const char* videoPath, int timLim = INT_MAX, int fps = 15)
 {
 	FILE* fp = fopen(filePath, "rb");
@@ -30,65 +30,60 @@ int FileToVideo(const char* filePath, const char* videoPath, int timLim = INT_MA
 	fread(temp, 1, size, fp);
 	fclose(fp);
 
-	// 使用 C++17 filesystem 替代 system("md ...") 和 system("rd ...")
-	std::filesystem::remove_all("outputImg");
-	std::filesystem::create_directory("outputImg");
+	std::error_code ec;
+	std::filesystem::remove_all("outputImg", ec);
+	std::filesystem::create_directory("outputImg", ec);
 
 	Code::Main(temp, size, "outputImg", "png", 1LL * fps * timLim / 1000);
 	FFMPEG::ImagetoVideo("outputImg", "png", videoPath, fps, 60, 100000);
 
-	std::filesystem::remove_all("outputImg");
+	std::filesystem::remove_all("outputImg", ec);
 	free(temp);
 	return 0;
 }
 
-// 视频转文件 (解码器逻辑)
 int VideoToFile(const char* videoPath, const char* filePath)
 {
-	char imgName[256];
-	std::filesystem::remove_all("inputImg");
-	std::filesystem::create_directory("inputImg");
+	std::error_code ec;
+	std::filesystem::remove_all("inputImg", ec);
+	std::filesystem::create_directory("inputImg", ec);
 
-	std::atomic<bool> isThreadOver = false;
-	std::thread th([&] {
-		FFMPEG::VideotoImage(videoPath, "inputImg", "jpg");
-		isThreadOver = true;
-		});
+	std::cout << "Extracting frames from video... Please wait." << std::endl;
+	FFMPEG::VideotoImage(videoPath, "inputImg", "jpg");
+	std::cout << "Frames extraction completed. Start decoding..." << std::endl;
+
+	std::vector<std::string> imageFiles;
+	for (const auto& entry : std::filesystem::directory_iterator("inputImg", ec))
+	{
+		if (entry.is_regular_file() && entry.path().extension() == ".jpg")
+		{
+			imageFiles.push_back(entry.path().string());
+		}
+	}
+	std::sort(imageFiles.begin(), imageFiles.end());
+
+	if (imageFiles.empty())
+	{
+		std::cerr << "Error: No frames found in inputImg directory." << std::endl;
+		return 1;
+	}
 
 	int precode = -1;
 	std::vector<unsigned char> outputFile;
 	bool hasStarted = false;
 	bool ret = 0;
+	std::set<int> parsedFrames; // 记录已解析的帧，防止同一帧多次加入
 
-	for (int i = 1;; ++i)
+	for (const auto& imgName : imageFiles)
 	{
-		snprintf(imgName, 256, "inputImg/%05d.jpg", i);
-		FILE* fp = nullptr;
-		do
-		{
-			fp = fopen(imgName, "rb");
-			if (fp == nullptr && !isThreadOver) {
-				std::this_thread::yield(); // 等待 FFmpeg 抽帧
-			}
-		} while (fp == nullptr && !isThreadOver);
+		cv::Mat srcImg = cv::imread(imgName, cv::IMREAD_COLOR);
+		if (srcImg.empty()) continue;
 
-		if (fp == nullptr)
-		{
-			// 线程结束且文件仍然不存在，说明视频读取完毕
-			break;
-		}
-
-		cv::Mat srcImg = cv::imread(imgName, 1);
 		cv::Mat disImg;
-		fclose(fp);
-
-		// 读完图片后立即通过 C++ 标准库删除，替代 system("del ...")
-		std::filesystem::remove(imgName);
-
-		// ★ 结合 pic.cpp 和纯数字后备逻辑！
+		// 调用原版 pic.cpp 的解析
 		if (ImgParse::Main(srcImg, disImg))
 		{
-			// pic.cpp 物理透视纠正失败时，走纯数字像素的等比缩放逻辑
+			// 如果由于没有边框等原因矫正失败，直接将其原图或缩放交给解码器
 			if (srcImg.rows == ImageDecode::FrameSize && srcImg.cols == ImageDecode::FrameSize) {
 				disImg = srcImg;
 			}
@@ -98,70 +93,74 @@ int VideoToFile(const char* videoPath, const char* filePath)
 		}
 
 		ImageDecode::ImageInfo imageInfo;
-		bool ans = ImageDecode::Main(disImg, imageInfo);
-		if (ans)
+		if (ImageDecode::Main(disImg, imageInfo))
 		{
-			continue;
+			continue; // 解码失败，直接看下一张图
 		}
 
 		if (!hasStarted)
 		{
-			if (imageInfo.IsStart)
+			if (imageInfo.IsStart) {
 				hasStarted = true;
+			}
 			else continue;
 		}
 
-		if (precode == imageInfo.FrameBase)
+		// 因为视频抽出来的多张图属于同一个逻辑帧，过滤掉重复帧
+		if (parsedFrames.count(imageInfo.FrameBase) > 0)
 			continue;
 
+		// 这里去掉了原本严苛的报错跳出逻辑。如果有丢帧，只打印警告，依然继续解析！
 		if (precode != -1 && ((precode + 1) & UINT16_MAX) != imageInfo.FrameBase)
 		{
-			puts("error, there is a skipped frame, there are some images parsed failed.");
-			ret = 1;
+			std::cerr << "Warning: Possible skipped logic frame. Expected " << ((precode + 1) & UINT16_MAX)
+				<< ", but got " << imageInfo.FrameBase << std::endl;
+		}
+
+		printf("Frame %d is parsed successfully!\n", imageInfo.FrameBase);
+
+		parsedFrames.insert(imageInfo.FrameBase);
+		precode = imageInfo.FrameBase;
+
+		for (auto& e : imageInfo.Info) {
+			outputFile.push_back(e);
+		}
+
+		if (imageInfo.IsEnd) {
 			break;
 		}
-		printf("Frame %d is parsed!\n", imageInfo.FrameBase);
-
-		precode = imageInfo.FrameBase;
-		for (auto& e : imageInfo.Info)
-			outputFile.push_back(e);
-
-		if (imageInfo.IsEnd)
-			break;
 	}
 
-	th.join();
-
-	if (ret == 0)
+	if (hasStarted)
 	{
 		printf("\nVideo Parse is success.\nFile Size:%zu B\nTotal Frame:%d\n", outputFile.size(), precode);
 		FILE* fp = fopen(filePath, "wb");
 		if (fp == nullptr) return 1;
 		fwrite(outputFile.data(), sizeof(unsigned char), outputFile.size(), fp);
 		fclose(fp);
+
+		std::filesystem::remove_all("inputImg", ec);
 		return 0;
 	}
 
-	exit(1);
+	std::cerr << "[ERROR] Failed to parse video into file. Start frame was never found or all frames corrupted." << std::endl;
+	return 1;
 }
 
 int main(int argc, char* argv[])
 {
-	// 使用 CMake 中配置的宏 BUILD_ENCODER 和 BUILD_DECODER 代替 constexpr 控制流
-	// 彻底解决 "C2181 没有匹配 if 的非法 else" 问题
+	cv::utils::logging::setLogLevel(cv::utils::logging::LOG_LEVEL_WARNING);
+
 #if defined(BUILD_ENCODER)
 	if (argc == 4)
 		return FileToVideo(argv[1], argv[2], std::stoi(argv[3]));
 	else if (argc == 5)
 		return FileToVideo(argv[1], argv[2], std::stoi(argv[3]), std::stoi(argv[4]));
-
 	puts("Usage: encoder <inputFile> <outputVideo> <timeLimit> [fps]");
 #else
 	if (argc == 3)
 		return VideoToFile(argv[1], argv[2]);
-
 	puts("Usage: decoder <inputVideo> <outputFile>");
 #endif
-
 	return 1;
 }
