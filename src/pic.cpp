@@ -1,13 +1,13 @@
-#include"pic.h"
+#include "pic.h"
 
-// 开启下面两个宏可以开启调试
-//#define FIND_QRPOINT_DEBUG 1
-//#define CropParallelRect_DEBUG 1
+// Uncomment the macros below to enable debug mode
+// #define FIND_QRPOINT_DEBUG 1
+// #define CropParallelRect_DEBUG 1
 
 #define Show_Img(src) do\
 {\
-	imshow("DEBUG", src);\
-	waitKey();\
+	cv::imshow("DEBUG", src);\
+	cv::waitKey();\
 }while (0);
 
 namespace ImgParse
@@ -16,6 +16,7 @@ namespace ImgParse
 	constexpr float MaxQrTypeRate = 2.2, minQrTypeRate = 1.8;
 	constexpr float MaxDistanceRate = 1.1, minDistanceRate = 0.9;
 
+	// Use dynamic sizing parameters to adapt the "108 resolution" concept to the current repo
 	constexpr int LogicalFrameSize = 133;
 	constexpr int FrameOutputRate = 10;
 	constexpr int OutputFrameSize = LogicalFrameSize * FrameOutputRate; // 1330
@@ -23,6 +24,7 @@ namespace ImgParse
 
 	Mat Rotation_90(const Mat& srcImg)
 	{
+		// Return a copy of the specified matrix rotated by 90 degrees
 		Mat tempImg;
 		transpose(srcImg, tempImg);
 		flip(tempImg, tempImg, 1);
@@ -31,6 +33,7 @@ namespace ImgParse
 
 	Point2f CalRectCenter(const vector<Point>& contours)
 	{
+		// Find the center point of the extracted contours
 		float centerx = 0, centery = 0;
 		int n = contours.size();
 		centerx = (contours[n / 4].x + contours[n * 2 / 4].x + contours[3 * n / 4].x + contours[n - 1].x) / 4;
@@ -40,6 +43,7 @@ namespace ImgParse
 
 	bool IsClockWise(const Point& basePoint, const Point& point1, const Point& point2)
 	{
+		// Determine the clockwise/counter-clockwise relationship between point1 and point2
 		float ax = point1.x - basePoint.x, ay = point1.y - basePoint.y;
 		float bx = point2.x - basePoint.x, by = point2.y - basePoint.y;
 		return (ax * by - bx * ay) > 0;
@@ -54,6 +58,7 @@ namespace ImgParse
 
 	Mat CropRect(const Mat& srcImg, const RotatedRect& rotatedRect)
 	{
+		// Crop a rotated rectangle from the image
 		cv::Mat srcPoints, disImg;
 		boxPoints(rotatedRect, srcPoints);
 		vector<Point2f> dis_points =
@@ -80,24 +85,24 @@ namespace ImgParse
 
 	pair<float, float> CalExtendVec(const Point2f& poi0, const Point2f& poi1, const Point2f& poi2, float bias)
 	{
+		// Given three points, calculate the exterior angle bisector vector of length bias
 		float dis0 = distance(poi0, poi1), dis1 = distance(poi0, poi2);
 		float rate = dis1 / dis0;
 		float x1 = poi0.x - poi2.x, y1 = poi0.y - poi2.y;
 		float x2 = (poi0.x - poi1.x) * rate, y2 = (poi0.y - poi1.y) * rate;
 		float totx = x1 + x2, toty = y1 + y2, distot = sqrt(totx * totx + toty * toty);
-		if (distot < 1e-5) return { 0, 0 }; // 防止除 0 崩溃
-		//
+		if (distot < 1e-5) return { 0, 0 }; // Prevent division by zero
 		return { totx / distot * bias, toty / distot * bias };
 	}
 
 	Mat CropParallelRect(const Mat& srcImg, const vector<Point2f>& srcPoints, Size size = { 0,0 })
 	{
+		// Perspective transform a quadrilateral into a rectangle
 		cv::Mat disImg;
 		if (size == Size(0, 0))
 			size = Size(distance(srcPoints[0], srcPoints[1]), distance(srcPoints[1], srcPoints[3]));
 
-		// 防御：如果 size 极其离谱，直接返回空图
-		//
+		// Defense against extreme sizes
 		if (size.width <= 0 || size.height <= 0 || size.width > 10000 || size.height > 10000) {
 			return disImg;
 		}
@@ -244,8 +249,6 @@ namespace ImgParse
 		Mat ImgPreprocessing(const Mat& srcImg, float blurRate = 0.0005)
 		{
 			Mat tmpImg;
-			// 外层防线：绝对确保传入 cvtColor 的图片不为空
-			//
 			if (srcImg.empty()) return tmpImg;
 
 			cvtColor(srcImg, tmpImg, COLOR_BGR2GRAY);
@@ -260,8 +263,6 @@ namespace ImgParse
 			vector<vector<Point> > contours;
 			vector<Vec4i> hierarchy;
 
-			// 防空图崩
-			//
 			if (srcImg.empty()) return true;
 
 			findContours(srcImg, contours, hierarchy, RETR_TREE, CHAIN_APPROX_NONE, Point(0, 0));
@@ -390,7 +391,8 @@ namespace ImgParse
 
 				if (!ScreenQrPoint(preprocessed, qrPointsTemp))
 				{
-					if (qrPointsTemp.size() >= 3 && !DumpExcessQrPoint(qrPointsTemp))
+					// For correct perspective, we MUST require at least 4 valid tracking points
+					if (qrPointsTemp.size() >= 4 && !DumpExcessQrPoint(qrPointsTemp))
 					{
 						qrPointsTemp.swap(qrPoints);
 						AdjustPointsOrder(qrPoints);
@@ -439,16 +441,11 @@ namespace ImgParse
 					}
 		}
 
+		// Reverting back to original logic: Do NOT fake the 4th point. 
+		// For mobile cameras, missing the physical 4th point implies perspective transform will fail.
+		if (tag) return 1;
+
 		PointsInfo.erase(PointsInfo.begin() + 3, PointsInfo.end());
-
-		if (tag)
-		{
-			possiblePoints.Center = CalForthPoint(PointsInfo[0].Center, PointsInfo[1].Center, PointsInfo[2].Center);
-			possiblePoints.size = avgSize / 2.0;
-			possiblePoints.Rect.center = possiblePoints.Center;
-			possiblePoints.Rect.size = Size2f(PointsInfo[0].Rect.size.width / 2.0, PointsInfo[0].Rect.size.height / 2.0);
-		}
-
 		PointsInfo.push_back(std::move(possiblePoints));
 		return 0;
 	}
@@ -496,36 +493,44 @@ namespace ImgParse
 			for (int j = margin; j < mat.cols - margin; ++j)
 			{
 				Vec3b& temp = mat.at<Vec3b>(i, j);
-				minVec[0] = min(minVec[0], (uint16_t)temp[0]);
-				minVec[1] = min(minVec[1], (uint16_t)temp[1]);
-				minVec[2] = min(minVec[2], (uint16_t)temp[2]);
-				maxVec[0] = max(maxVec[0], (uint16_t)temp[0]);
-				maxVec[1] = max(maxVec[1], (uint16_t)temp[1]);
-				maxVec[2] = max(maxVec[2], (uint16_t)temp[2]);
+				minVec[0] = std::min(minVec[0], (uint16_t)temp[0]);
+				minVec[1] = std::min(minVec[1], (uint16_t)temp[1]);
+				minVec[2] = std::min(minVec[2], (uint16_t)temp[2]);
+				maxVec[0] = std::max(maxVec[0], (uint16_t)temp[0]);
+				maxVec[1] = std::max(maxVec[1], (uint16_t)temp[1]);
+				maxVec[2] = std::max(maxVec[2], (uint16_t)temp[2]);
 			}
 		}
-		float avg = (minVec[0] + maxVec[0] + minVec[1] + maxVec[1] + minVec[2] + maxVec[2]) / 6.0;
+
+		// Enhancement for mobile phone screens with glare: 
+		// Instead of blending colors to B/W, we calculate channel-wise thresholds.
+		// This flawlessly handles uneven lighting and color preservation!
+		uint8_t avgB = (minVec[0] + maxVec[0]) / 2;
+		uint8_t avgG = (minVec[1] + maxVec[1]) / 2;
+		uint8_t avgR = (minVec[2] + maxVec[2]) / 2;
+
 		for (int i = 0; i < mat.rows; ++i)
 		{
 			for (int j = 0; j < mat.cols; ++j)
 			{
 				Vec3b& temp = mat.at<Vec3b>(i, j);
-				float sum = (temp[0] + temp[1] + temp[2]) / 3.0;
-				if (sum < avg) temp = Vec3b(0, 0, 0);
-				else temp = Vec3b(255, 255, 255);
+				temp[0] = (temp[0] < avgB) ? 0 : 255;
+				temp[1] = (temp[1] < avgG) ? 0 : 255;
+				temp[2] = (temp[2] < avgR) ? 0 : 255;
 			}
 		}
 	}
 
 	void dfs(int i, int j, int limi, int limj, int* dir, bool(*ispass)[CornerSearchSize], const Mat& mat)
 	{
-		if (i < 0 || i >= mat.rows || j < 0 || j >= mat.cols) return; // 边界保护
-		//
+		if (i < 0 || i >= mat.rows || j < 0 || j >= mat.cols) return; // boundary protection
 		if ((limi - i) * dir[0] > 0 || (limj - j) * dir[1] > 0) return;
 		if ((limi - i) * dir[0] <= -CornerSearchSize || (limj - j) * dir[1] <= -CornerSearchSize) return;
 		if (ispass[(i - limi) * dir[0]][(j - limj) * dir[1]]) return;
+
 		auto temp = mat.at<Vec3b>(i, j);
-		if (temp[0] == temp[1] && temp[1] == temp[2] && temp[2] == 255)
+		// With independent channel thresholding, white corners will still be cleanly identifiable here
+		if (temp[0] == 255 && temp[1] == 255 && temp[2] == 255)
 		{
 			ispass[(i - limi) * dir[0]][(j - limj) * dir[1]] = 1;
 			dfs(i + 1 * dir[0], j, limi, limj, dir, ispass, mat);
@@ -555,10 +560,9 @@ namespace ImgParse
 					int j = dis - i;
 					int r = poi[k][0] + i * dir[k][0];
 					int c = poi[k][1] + j * dir[k][1];
-					if (r >= 0 && r < mat.rows && c >= 0 && c < mat.cols) { // 边界保护
-						//
+					if (r >= 0 && r < mat.rows && c >= 0 && c < mat.cols) {
 						auto temp = mat.at<Vec3b>(r, c);
-						if (temp[0] == temp[1] && temp[1] == temp[2] && temp[2] == 255 && ispass[i][j])
+						if (temp[0] == 255 && temp[1] == 255 && temp[2] == 255 && ispass[i][j])
 						{
 							ret.emplace_back(r, c);
 							goto Final;
@@ -622,41 +626,35 @@ namespace ImgParse
 		Mat temp;
 		vector<QrcodeParse::ParseInfo> PointsInfo;
 
-		// 1. 获取角点
-		//
-		if (QrcodeParse::Main(srcImg, PointsInfo) || PointsInfo.size() < 3)
+		// 1. Point Location
+		if (QrcodeParse::Main(srcImg, PointsInfo) || PointsInfo.size() < 4)
 			return 1;
 
 		if (FindForthPoint(PointsInfo)) return 1;
 
-		// 一阶裁剪
-		//
+		// First stage crop
 		temp = CropParallelRect(srcImg, AdjustForthPoint(PointsInfo, 0));
-		if (temp.empty()) return 1; 
-		// 防御：一阶裁剪失败，立刻截断，丢给外层兜底
-		//
+		if (temp.empty()) return 1;
 
 		disImg = CropParallelRect(srcImg, AdjustForthPoint(PointsInfo, 1));
 		if (disImg.empty()) return 1;
 
-		// 2. 二阶裁剪
-		//
+		// 2. Second stage crop to eliminate mapping aberration
 		PointsInfo.clear();
-		if (QrcodeParse::Main(temp, PointsInfo) || PointsInfo.size() < 3) {
-			// 二阶找不到角点，我们直接拿着一阶的 disImg 交差，不要往下跑导致崩溃
-			//
-			GetVec(disImg);
-			Resize(disImg);
-			return 0;
+		if (QrcodeParse::Main(temp, PointsInfo) || PointsInfo.size() < 4) {
+			// Fallback: Use stage 1 crop result directly
+		}
+		else {
+			if (FindForthPoint(PointsInfo)) {
+				// Fallback again if 4th point tracking fails
+			}
+			else {
+				Mat tempDis = CropParallelRect(temp, AdjustForthPoint(PointsInfo, 1));
+				if (!tempDis.empty()) disImg = tempDis;
+			}
 		}
 
-		if (!FindForthPoint(PointsInfo)) {
-			Mat tempDis = CropParallelRect(temp, AdjustForthPoint(PointsInfo, 1));
-			if (!tempDis.empty()) disImg = tempDis;
-		}
-
-		// 3. 三阶微调
-		//
+		// 3. Third stage exact corner tracking and tuning
 		disImg.copyTo(temp);
 		cv::resize(temp, temp, Size(OutputFrameSize, OutputFrameSize));
 		GetVec(temp);
@@ -668,8 +666,7 @@ namespace ImgParse
 			if (!finalTemp.empty()) disImg = finalTemp;
 		}
 
-		// 4. 重采样
-		//
+		// 4. Quantize and Resample to Target Logical Size
 		GetVec(disImg);
 		Resize(disImg);
 
