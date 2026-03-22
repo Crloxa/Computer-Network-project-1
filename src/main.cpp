@@ -97,8 +97,8 @@ int VideoToFile(const char* videoPath, const char* filePath)
 			continue;
 		}
 
-		// 保存成功解析并裁剪后的图片
-		// //
+		 //保存成功解析并裁剪后的图片
+		 //
 		//{
 		//	std::filesystem::path p(imgName);
 		//	std::string filename = p.filename().string();

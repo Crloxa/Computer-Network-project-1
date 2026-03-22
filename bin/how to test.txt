@@ -1,2 +1,8 @@
-.\encoder exp1.jpg exp2.mp4 10000 10
-.\decoder test.mp4 test.jpg
+.\encoder test1.jpg output1.mp4 10000 10
+.\decoder test1.mp4 output1.jpg
+注意编解码时候的文件后缀，不同的文件后缀可能导致解码不符合预期
+拍照的时候尽量保持平稳，可以斜着拍，但是不要剧烈晃动
+test1_for_jpg.mp4展示对极端情况（即大量同色块区域导致数据区十分奇怪的情况）的图片具有鲁棒性，请注意这是初版测试视频，所以帧率是10帧
+test2_for_jpg.mp4展示对歪斜程度严重的视频，仍然可以纠正的能力
+test1_for_jpeg.mp4展示即使正常视频出错也有鲁班性
+test2_for_jpeg.mp4展示在稳定情况下可以做到不出错解码的高效性
