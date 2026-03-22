@@ -36,44 +36,16 @@ set(OPENCV_LIBS
     $<$<CONFIG:MinSizeRel>:${OPENCV_LIB_RELEASE}>
 )
 
+# 生成编码器
 add_executable(encoder ${SRC_FILES})
 target_compile_definitions(encoder PRIVATE BUILD_ENCODER=1)
 
+# 生成解码器
 add_executable(decoder ${SRC_FILES})
 target_compile_definitions(decoder PRIVATE BUILD_DECODER=1)
 
-set(TEST_COMMON_SOURCES
-    src/code.cpp
-    src/ffmpeg.cpp
-    src/ImgDecode.cpp
-    src/pic.cpp
-)
-
-set(WITHOUT_PIC_SRC_FILES
-    src/main_without_pic.cpp
-    src/code.cpp
-    src/ffmpeg.cpp
-    src/ImgDecode.cpp
-)
-
-add_executable(textcode
-    src/textcode.cpp
-    ${TEST_COMMON_SOURCES}
-)
-
-add_executable(textdecode
-    src/textdecode.cpp
-    ${TEST_COMMON_SOURCES}
-)
-
-add_executable(encoder_without_pic ${WITHOUT_PIC_SRC_FILES})
-target_compile_definitions(encoder_without_pic PRIVATE BUILD_ENCODER=1)
-
-add_executable(decoder_without_pic ${WITHOUT_PIC_SRC_FILES})
-target_compile_definitions(decoder_without_pic PRIVATE BUILD_DECODER=1)
-
-# 链接 OpenCV world 库（全部 target 统一处理）
-foreach(target encoder decoder textcode textdecode encoder_without_pic decoder_without_pic)
+# 链接 OpenCV world 库（统一处理）
+foreach(target encoder decoder)
     target_link_libraries(${target} PRIVATE ${OPENCV_LIBS})
 endforeach()
 
@@ -85,6 +57,6 @@ add_custom_target(copy_deps ALL
     COMMENT "Copy OpenCV runtime dlls to bin"
 )
 
-foreach(target encoder decoder textcode textdecode encoder_without_pic decoder_without_pic)
+foreach(target encoder decoder)
     add_dependencies(${target} copy_deps)
 endforeach()
