@@ -399,14 +399,7 @@ namespace ImgParse {
         //
         double aspect = (double)srcImg.cols / srcImg.rows;
         if (aspect > 0.95 && aspect < 1.05 && srcImg.cols > 266) {
-            Mat grayForDigital;
-            if (srcImg.channels() == 3) cvtColor(srcImg, grayForDigital, COLOR_BGR2GRAY);
-            else grayForDigital = srcImg.clone();
-
             disImg.create(133, 133, CV_8UC3);
-            Mat binRaw;
-            threshold(grayForDigital, binRaw, 0, 255, THRESH_BINARY | THRESH_OTSU);
-
             float stepX = (float)srcImg.cols / 133.0f;
             float stepY = (float)srcImg.rows / 133.0f;
 
@@ -414,8 +407,12 @@ namespace ImgParse {
                 for (int c = 0; c < 133; ++c) {
                     int px = std::min(static_cast<int>((c + 0.5f) * stepX), srcImg.cols - 1);
                     int py = std::min(static_cast<int>((r + 0.5f) * stepY), srcImg.rows - 1);
-                    uint8_t val = binRaw.at<uint8_t>(py, px);
-                    disImg.at<Vec3b>(r, c) = val ? Vec3b(255, 255, 255) : Vec3b(0, 0, 0);
+                    if (srcImg.channels() == 3) {
+                        disImg.at<Vec3b>(r, c) = srcImg.at<Vec3b>(py, px);
+                    } else {
+                        uint8_t val = srcImg.at<uint8_t>(py, px);
+                        disImg.at<Vec3b>(r, c) = Vec3b(val, val, val);
+                    }
                 }
             }
             return true;

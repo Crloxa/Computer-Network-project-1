@@ -50,6 +50,7 @@ namespace ImageDecode
 	constexpr int TopDataWidth = 75;
 	constexpr int DataAreaCount = 5;
 	constexpr int PaddingCellCount = 4;
+	constexpr int BitsPerCell = 2;
 
 	const std::array<DataArea, DataAreaCount> kDataAreas =
 	{{
@@ -63,6 +64,26 @@ namespace ImageDecode
 	bool isWhiteCell(const Vec3b& cell)
 	{
 		return cell[0] + cell[1] + cell[2] >= 384;
+	}
+
+	int readCellValue(const Vec3b& cell)
+	{
+		const int b = cell[0];
+		const int g = cell[1];
+		const int r = cell[2];
+		if (b + g + r >= 500)
+		{
+			return 3;
+		}
+		if (b >= g && b >= r)
+		{
+			return 0;
+		}
+		if (g >= b && g >= r)
+		{
+			return 1;
+		}
+		return 2;
 	}
 
 	bool isInsideCornerQuietZone(int row, int col)
@@ -170,14 +191,16 @@ namespace ImageDecode
 	{
 		const auto cells = buildMergedDataCells();
 		info.assign(BytesPerFrame, 0);
-		for (int bitIndex = 0; bitIndex < BytesPerFrame * 8 && bitIndex < static_cast<int>(cells.size()); ++bitIndex)
+		const int totalCells = BytesPerFrame * (8 / BitsPerCell);
+		for (int cellIndex = 0;
+			cellIndex < totalCells && cellIndex < static_cast<int>(cells.size());
+			++cellIndex)
 		{
-			if (isWhiteCell(mat.at<Vec3b>(cells[bitIndex].row, cells[bitIndex].col)))
-			{
-				const int byteIndex = bitIndex / 8;
-				const int offset = bitIndex % 8;
-				info[byteIndex] |= static_cast<unsigned char>(1u << offset);
-			}
+			const int bitIndex = cellIndex * BitsPerCell;
+			const int byteIndex = bitIndex / 8;
+			const int offset = bitIndex % 8;
+			const int value = readCellValue(mat.at<Vec3b>(cells[cellIndex].row, cells[cellIndex].col));
+			info[byteIndex] |= static_cast<unsigned char>((value & ((1 << BitsPerCell) - 1)) << offset);
 		}
 	}
 

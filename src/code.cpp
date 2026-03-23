@@ -22,7 +22,8 @@
 
 namespace Code
 {
-	constexpr int BytesPerFrame = 1878;
+	constexpr int BytesPerFrame = 3756;
+	constexpr int BitsPerCell = 2;
 	constexpr int FrameSize = 133;
 	constexpr int FrameOutputRate = 10;
 	constexpr int FrameOutputSize = FrameSize * FrameOutputRate;
@@ -89,6 +90,14 @@ namespace Code
 		Vec3b(255, 0, 0), Vec3b(255, 0, 255), Vec3b(255, 255, 0), Vec3b(255, 255, 255)
 	};
 
+	const Vec3b dataPixel[4] =
+	{
+		Vec3b(255, 0, 0),
+		Vec3b(0, 255, 0),
+		Vec3b(0, 0, 255),
+		Vec3b(255, 255, 255)
+	};
+
 	const std::array<DataArea, DataAreaCount> kDataAreas =
 	{{
 		{3, TopDataLeft, 3, TopDataWidth, 0},
@@ -129,9 +138,9 @@ namespace Code
 		return std::abs(row - center) <= SmallQrPointRadius + 2 && std::abs(col - center) <= SmallQrPointRadius + 2;
 	}
 
-	void fillBinaryNoiseCell(Vec3b& cell)
+	void fillNoiseCell(Vec3b& cell)
 	{
-		cell = pixel[(std::rand() & 1) ? White : Black];
+		cell = dataPixel[std::rand() & 3];
 	}
 
 	std::vector<CellPos> buildAreaCells(const DataArea& area)
@@ -209,26 +218,27 @@ namespace Code
 			const int rowWidth = area.width - area.trimRight;
 			for (int col = area.left; col < area.left + rowWidth; ++col)
 			{
-				fillBinaryNoiseCell(mat.at<Vec3b>(row, col));
+				fillNoiseCell(mat.at<Vec3b>(row, col));
 			}
 		}
 	}
 
 	void writeBytesToCells(Mat& mat, const unsigned char* info, int len, const std::vector<CellPos>& cells)
 	{
-		int bitIndex = 0;
-		const int totalBits = len * 8;
+		int cellIndex = 0;
+		const int totalCells = len * (8 / BitsPerCell);
 		for (const auto& cell : cells)
 		{
-			if (bitIndex >= totalBits)
+			if (cellIndex >= totalCells)
 			{
 				break;
 			}
+			const int bitIndex = cellIndex * BitsPerCell;
 			const int byteIndex = bitIndex / 8;
 			const int offset = bitIndex % 8;
-			const bool bit = ((info[byteIndex] >> offset) & 1) != 0;
-			mat.at<Vec3b>(cell.row, cell.col) = pixel[bit ? White : Black];
-			++bitIndex;
+			const int value = (info[byteIndex] >> offset) & ((1 << BitsPerCell) - 1);
+			mat.at<Vec3b>(cell.row, cell.col) = dataPixel[value];
+			++cellIndex;
 		}
 	}
 
@@ -410,7 +420,7 @@ namespace Code
 		const auto mergedCells = buildMergedDataCells();
 		for (const auto& cell : mergedCells)
 		{
-			fillBinaryNoiseCell(mat.at<Vec3b>(cell.row, cell.col));
+			fillNoiseCell(mat.at<Vec3b>(cell.row, cell.col));
 		}
 		for (const auto& cell : getPaddingCells())
 		{
