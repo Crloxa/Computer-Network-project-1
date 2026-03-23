@@ -38,8 +38,6 @@ int FileToVideo(const char* filePath, const char* videoPath, int timLim = INT_MA
 	std::filesystem::remove_all("outputImg", ec);
 	std::filesystem::create_directory("outputImg", ec);
 
-	// 根据要求，时间限制 (ms) 决定最大帧数
-	//
 	long long maxFrames = 1LL * fps * timLim / 1000;
 	if (timLim == INT_MAX) maxFrames = INT_MAX;
 
@@ -55,8 +53,8 @@ int VideoToFile(const char* videoPath, const char* filePath, const char* voutPat
 {
 	std::cout << "Opening video file directly in memory: " << videoPath << std::endl;
 
-	// 【核心提速】：直接使用 OpenCV VideoCapture 在内存中逐帧读取视频！
-	// 彻底废弃 FFMPEG::VideotoImage 落盘产生几千张 JPG 的巨额 I/O 开销
+	// 【核心提速】：不再调用 FFMPEG::VideotoImage 写废硬盘
+	// 直接使用 OpenCV VideoCapture 逐帧内存硬解！
 	//
 	cv::VideoCapture cap(videoPath);
 	if (!cap.isOpened()) {
@@ -73,7 +71,7 @@ int VideoToFile(const char* videoPath, const char* filePath, const char* voutPat
 	cv::Mat srcImg;
 	int frameCount = 0;
 
-	// 循环从内存缓冲区抽取视频帧
+	// 循环从内存读取视频帧，彻底消灭 IO 瓶颈
 	//
 	while (cap.read(srcImg))
 	{
@@ -81,9 +79,6 @@ int VideoToFile(const char* videoPath, const char* filePath, const char* voutPat
 		if (srcImg.empty()) continue;
 
 		cv::Mat disImg;
-
-		// 调用 pic.cpp 的解析
-		//
 		bool parseSuccess = ImgParse::Main(srcImg, disImg);
 
 		if (!parseSuccess)
@@ -94,9 +89,6 @@ int VideoToFile(const char* videoPath, const char* filePath, const char* voutPat
 		ImageDecode::ImageInfo imageInfo;
 		if (ImageDecode::Main(disImg, imageInfo))
 		{
-			// 仅调试使用，可注释掉减少终端输出刷屏
-			// std::cout << "Frame " << frameCount << ": decode failed" << std::endl;
-			//
 			continue;
 		}
 
@@ -111,23 +103,16 @@ int VideoToFile(const char* videoPath, const char* filePath, const char* voutPat
 		if (parsedFrames.count(imageInfo.FrameBase) > 0)
 			continue;
 
-		// 检查是否有跳帧现象
-		//
 		if (precode != -1 && ((precode + 1) & UINT16_MAX) != imageInfo.FrameBase)
 		{
 			int skippedFrames = imageInfo.FrameBase - (precode + 1);
 			if (skippedFrames < 0) {
-				// 处理溢出翻转情况
-				//
 				skippedFrames += UINT16_MAX + 1;
 			}
 
 			std::cerr << "Warning: Skipped " << skippedFrames << " logic frame(s). Expected "
 				<< ((precode + 1) & UINT16_MAX) << ", but got " << imageInfo.FrameBase << std::endl;
 
-			// 填补因为跳帧而丢失的数据，使用 0x00 填充数据
-			// 并把对应的 voutFile 标记为 0x00 (无效)
-			//
 			for (int i = 0; i < skippedFrames; ++i) {
 				for (int j = 0; j < ImageDecode::BytesPerFrame; ++j) {
 					outputFile.push_back(0x00);
@@ -141,12 +126,9 @@ int VideoToFile(const char* videoPath, const char* filePath, const char* voutPat
 		parsedFrames.insert(imageInfo.FrameBase);
 		precode = imageInfo.FrameBase;
 
-		// 将当前正常解码的帧数据写入 outputFile
-		// 并把对应的 voutFile 标记为 0xFF (有效)
-		//
 		for (auto& e : imageInfo.Info) {
 			outputFile.push_back(e);
-			if (voutPath != nullptr) voutFile.push_back(0xff);
+			if (voutPath != nullptr) voutFile.push_back(0xFF);
 		}
 
 		if (imageInfo.IsEnd) {
@@ -160,15 +142,11 @@ int VideoToFile(const char* videoPath, const char* filePath, const char* voutPat
 	{
 		printf("\nVideo Parse is success.\nFile Size:%zu B\nTotal Logic Frame:%d\n", outputFile.size(), precode);
 
-		// 写入解码结果数据文件
-		//
 		FILE* fp = fopen(filePath, "wb");
 		if (fp == nullptr) return 1;
 		fwrite(outputFile.data(), sizeof(unsigned char), outputFile.size(), fp);
 		fclose(fp);
 
-		// 如果提供了 voutPath 并且我们需要输出有效性标记文件
-		//
 		if (voutPath != nullptr) {
 			FILE* vout_fp = fopen(voutPath, "wb");
 			if (vout_fp != nullptr) {
@@ -192,22 +170,12 @@ int main(int argc, char* argv[])
 	cv::utils::logging::setLogLevel(cv::utils::logging::LOG_LEVEL_WARNING);
 
 #if defined(BUILD_ENCODER)
-	// 编码器接口规范
-	// argv[1]: 输入二进制文件 (in.bin)
-	// argv[2]: 输出视频文件 (out.mp4)
-	// argv[3]: 视频最大时长限制(毫秒) 
-	//
 	if (argc == 4)
 		return FileToVideo(argv[1], argv[2], std::stoi(argv[3]));
 	else if (argc == 5)
 		return FileToVideo(argv[1], argv[2], std::stoi(argv[3]), std::stoi(argv[4]));
 	puts("Usage: encoder <inputFile> <outputVideo> <timeLimit_ms> [fps]");
 #else
-	// 解码器接口规范
-	// argv[1]: 输入视频文件 (recorded.mp4)
-	// argv[2]: 解码后输出文件 (out.bin)
-	// argv[3] (可选): 每位有效性标记文件 (vout.bin)
-	//
 	if (argc == 3)
 		return VideoToFile(argv[1], argv[2]);
 	else if (argc == 4)
