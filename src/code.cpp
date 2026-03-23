@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <vector>
 
 // 定义下面这个宏来开启编码端调试图显示。
@@ -289,14 +290,15 @@ namespace Code
 
 	void WriteFrameImage(const Mat& logicalFrame, const char* savePath, const char* outputFormat, int frameIndex)
 	{
-		char fileName[128];
 		const Mat output = ScaleToDisSize(logicalFrame);
-		std::snprintf(fileName, sizeof(fileName), "%s\\%05d.%s", savePath, frameIndex, outputFormat);
-		imwrite(fileName, output);
+		const auto framePath =
+			(std::filesystem::path(savePath) / (cv::format("%05d.%s", frameIndex, outputFormat))).string();
+		imwrite(framePath, output);
 #ifdef Layout_DEBUG
 		const Mat layoutPreview = ScaleToDisSize(BuildLayoutPreview(logicalFrame));
-		std::snprintf(fileName, sizeof(fileName), "%s\\%05d_layout.%s", savePath, frameIndex, outputFormat);
-		imwrite(fileName, layoutPreview);
+		const auto layoutPath =
+			(std::filesystem::path(savePath) / (cv::format("%05d_layout.%s", frameIndex, outputFormat))).string();
+		imwrite(layoutPath, layoutPreview);
 #endif
 	}
 

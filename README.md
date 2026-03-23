@@ -59,6 +59,17 @@
   - `.\scripts\run_project1.ps1 decode out\encode\input\frames\physical out\decode\input`
 - 组员若仍复制旧命令里的 `--profile/--ecc/--canvas`，当前程序会接受并警告“这些参数已被忽略”，实际仍按 `V1.6-108-4F` 执行
 
+## macOS 构建速记
+
+- 需要本机安装 `OpenCV` 和 `ffmpeg`
+- 推荐使用 Homebrew：
+  - `brew install opencv ffmpeg`
+- 从仓库根目录构建：
+  - `cmake -S . -B build`
+  - `cmake --build build -j`
+- macOS 下 `CMake` 会自动查找系统 `OpenCV`，运行时默认使用 `PATH` 中的 `ffmpeg`
+- Windows Visual Studio 仍保持原有 `lib/*.lib`、`lib/*.dll` 和 `ffmpeg\bin\ffmpeg.exe` 的约定不变
+
 ## 当前输出结构
 
 - `samples` 会生成 `layout_guide.*`、`sample_full_frame.*`、`sample_short_frame.*` 和 `sample_manifest.tsv`

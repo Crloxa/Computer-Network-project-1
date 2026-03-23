@@ -1,10 +1,17 @@
 #include "ffmpeg.h"
+#include <filesystem>
+#include <string>
 
 namespace FFMPEG
 {
     constexpr int MAXBUFLEN = 1024;
-    const char ffmpegPath[] = "ffmpeg\\bin\\";
     const char tmpPath[] = "tmpdir";
+
+#ifdef _WIN32
+    const char ffmpegCmd[] = "ffmpeg\\bin\\ffmpeg.exe";
+#else
+    const char ffmpegCmd[] = "ffmpeg";
+#endif
 
     int ImagetoVideo(const char* imagePath,
         const char* imageFormat,
@@ -14,19 +21,21 @@ namespace FFMPEG
         unsigned kbps)
     {
         char buf[MAXBUFLEN];
+        const std::filesystem::path inputPattern =
+            std::filesystem::path(imagePath) / ("%05d." + std::string(imageFormat));
         if (kbps)
         {
             std::snprintf(buf, MAXBUFLEN,
-                "%sffmpeg.exe -y -framerate %u -f image2 -i \"%s\\%%05d.%s\" "
+                "%s -y -framerate %u -f image2 -i \"%s\" "
                 "-b:v %uK -vcodec libx264 -r %u \"%s\"",
-                ffmpegPath, rawFrameRates, imagePath, imageFormat, kbps, outputFrameRates, videoPath);
+                ffmpegCmd, rawFrameRates, inputPattern.string().c_str(), kbps, outputFrameRates, videoPath);
         }
         else
         {
             std::snprintf(buf, MAXBUFLEN,
-                "%sffmpeg.exe -y -framerate %u -f image2 -i \"%s\\%%05d.%s\" "
+                "%s -y -framerate %u -f image2 -i \"%s\" "
                 "-vcodec libx264 -r %u \"%s\"",
-                ffmpegPath, rawFrameRates, imagePath, imageFormat, outputFrameRates, videoPath);
+                ffmpegCmd, rawFrameRates, inputPattern.string().c_str(), outputFrameRates, videoPath);
         }
         return std::system(buf);
     }
@@ -36,11 +45,12 @@ namespace FFMPEG
         const char* imageFormat)
     {
         char buf[MAXBUFLEN];
-        std::snprintf(buf, MAXBUFLEN, "md \"%s\"", imagePath);
-        std::system(buf);
+        std::filesystem::create_directories(imagePath);
+        const std::filesystem::path outputPattern =
+            std::filesystem::path(imagePath) / ("%05d." + std::string(imageFormat));
         std::snprintf(buf, MAXBUFLEN,
-            "%sffmpeg.exe -y -i \"%s\" -q:v 2 -f image2 \"%s\\%%05d.%s\"",
-            ffmpegPath, videoPath, imagePath, imageFormat);
+            "%s -y -i \"%s\" -q:v 2 -f image2 \"%s\"",
+            ffmpegCmd, videoPath, outputPattern.string().c_str());
         return std::system(buf);
     }
 
