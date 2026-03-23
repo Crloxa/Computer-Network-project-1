@@ -26,15 +26,21 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/ffmpeg/include
 )
 
-# OpenCV 库绝对路径，避免 link_directories + 短名称在 MSVC 下不可靠的问题
-set(OPENCV_LIB_DEBUG   ${CMAKE_SOURCE_DIR}/lib/opencv_world4120d.lib)
-set(OPENCV_LIB_RELEASE ${CMAKE_SOURCE_DIR}/lib/opencv_world4120.lib)
-set(OPENCV_LIBS
-    $<$<CONFIG:Debug>:${OPENCV_LIB_DEBUG}>
-    $<$<CONFIG:Release>:${OPENCV_LIB_RELEASE}>
-    $<$<CONFIG:RelWithDebInfo>:${OPENCV_LIB_RELEASE}>
-    $<$<CONFIG:MinSizeRel>:${OPENCV_LIB_RELEASE}>
-)
+if(WIN32)
+    # OpenCV 库绝对路径，避免 link_directories + 短名称在 MSVC 下不可靠的问题
+    set(OPENCV_LIB_DEBUG   ${CMAKE_SOURCE_DIR}/lib/opencv_world4120d.lib)
+    set(OPENCV_LIB_RELEASE ${CMAKE_SOURCE_DIR}/lib/opencv_world4120.lib)
+    set(OPENCV_LIBS
+        $<$<CONFIG:Debug>:${OPENCV_LIB_DEBUG}>
+        $<$<CONFIG:Release>:${OPENCV_LIB_RELEASE}>
+        $<$<CONFIG:RelWithDebInfo>:${OPENCV_LIB_RELEASE}>
+        $<$<CONFIG:MinSizeRel>:${OPENCV_LIB_RELEASE}>
+    )
+else()
+    find_package(OpenCV REQUIRED)
+    include_directories(${OpenCV_INCLUDE_DIRS})
+    set(OPENCV_LIBS ${OpenCV_LIBS})
+endif()
 
 # 生成编码器
 add_executable(encoder ${SRC_FILES})
@@ -49,14 +55,16 @@ foreach(target encoder decoder)
     target_link_libraries(${target} PRIVATE ${OPENCV_LIBS})
 endforeach()
 
-# 复制依赖到 bin（含 opencv dll）
-add_custom_target(copy_deps ALL
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_SOURCE_DIR}/bin
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/lib/opencv_world4120.dll ${CMAKE_SOURCE_DIR}/bin/
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/lib/opencv_world4120d.dll ${CMAKE_SOURCE_DIR}/bin/
-    COMMENT "Copy OpenCV runtime dlls to bin"
-)
+if(WIN32)
+    # 复制依赖到 bin（含 opencv dll）
+    add_custom_target(copy_deps ALL
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_SOURCE_DIR}/bin
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/lib/opencv_world4120.dll ${CMAKE_SOURCE_DIR}/bin/
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/lib/opencv_world4120d.dll ${CMAKE_SOURCE_DIR}/bin/
+        COMMENT "Copy OpenCV runtime dlls to bin"
+    )
 
-foreach(target encoder decoder)
-    add_dependencies(${target} copy_deps)
-endforeach()
+    foreach(target encoder decoder)
+        add_dependencies(${target} copy_deps)
+    endforeach()
+endif()
