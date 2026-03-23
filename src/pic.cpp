@@ -182,24 +182,7 @@ namespace ImgParse {
         //
         lastValidTransform = getPerspectiveTransform(srcPointsOuter, finalDst133);
 
-        Mat final798;
-        if (smallQrIdx == 0) rotate(binWarped, final798, ROTATE_180);
-        else if (smallQrIdx == 1) rotate(binWarped, final798, ROTATE_90_CLOCKWISE);
-        else if (smallQrIdx == 3) rotate(binWarped, final798, ROTATE_90_COUNTERCLOCKWISE);
-        else final798 = binWarped.clone();
-
-        // 完美中心降采样：从规整的 798 图提取 133，避开边缘模糊
-        //
-        disImg.create(133, 133, CV_8UC3);
-        for (int r = 0; r < 133; ++r) {
-            for (int c = 0; c < 133; ++c) {
-                int py = r * 6 + 3;
-                int px = c * 6 + 3;
-                uint8_t val = final798.at<uint8_t>(py, px);
-                disImg.at<Vec3b>(r, c) = val ? Vec3b(255, 255, 255) : Vec3b(0, 0, 0);
-            }
-        }
-
+        warpPerspective(srcImg, disImg, lastValidTransform, Size(133, 133), INTER_LINEAR);
         return true;
     }
 
@@ -369,13 +352,7 @@ namespace ImgParse {
         //
         lastValidTransform = transformMatrix.clone();
 
-        Mat grayWarped;
-        warpPerspective(gray, grayWarped, transformMatrix, Size(133, 133), INTER_LINEAR);
-
-        Mat binWarped;
-        threshold(grayWarped, binWarped, 0, 255, THRESH_BINARY | THRESH_OTSU);
-
-        cvtColor(binWarped, disImg, COLOR_GRAY2BGR);
+        warpPerspective(srcImg, disImg, transformMatrix, Size(133, 133), INTER_LINEAR);
         return true;
     }
 
@@ -452,16 +429,9 @@ namespace ImgParse {
         // ==========================================
         //
         if (!lastValidTransform.empty()) {
-            Mat grayWarped;
-
             // 直接使用上一次成功的矩阵对当前原图进行提取
             //
-            warpPerspective(grayNormal, grayWarped, lastValidTransform, Size(133, 133), INTER_LINEAR);
-
-            Mat binWarped;
-            threshold(grayWarped, binWarped, 0, 255, THRESH_BINARY | THRESH_OTSU);
-
-            cvtColor(binWarped, disImg, COLOR_GRAY2BGR);
+            warpPerspective(srcImg, disImg, lastValidTransform, Size(133, 133), INTER_LINEAR);
             return true;
         }
 

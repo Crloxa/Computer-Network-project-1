@@ -22,8 +22,8 @@
 
 namespace Code
 {
-	constexpr int BytesPerFrame = 3756;
-	constexpr int BitsPerCell = 2;
+	constexpr int BytesPerFrame = 5634;
+	constexpr int BitsPerCell = 3;
 	constexpr int FrameSize = 133;
 	constexpr int FrameOutputRate = 10;
 	constexpr int FrameOutputSize = FrameSize * FrameOutputRate;
@@ -90,11 +90,15 @@ namespace Code
 		Vec3b(255, 0, 0), Vec3b(255, 0, 255), Vec3b(255, 255, 0), Vec3b(255, 255, 255)
 	};
 
-	const Vec3b dataPixel[4] =
+	const Vec3b dataPixel[8] =
 	{
-		Vec3b(255, 0, 0),
-		Vec3b(0, 255, 0),
+		Vec3b(0, 0, 0),
 		Vec3b(0, 0, 255),
+		Vec3b(0, 255, 0),
+		Vec3b(0, 255, 255),
+		Vec3b(255, 0, 0),
+		Vec3b(255, 0, 255),
+		Vec3b(255, 255, 0),
 		Vec3b(255, 255, 255)
 	};
 
@@ -140,7 +144,7 @@ namespace Code
 
 	void fillNoiseCell(Vec3b& cell)
 	{
-		cell = dataPixel[std::rand() & 3];
+		cell = dataPixel[std::rand() & 7];
 	}
 
 	std::vector<CellPos> buildAreaCells(const DataArea& area)
@@ -211,6 +215,15 @@ namespace Code
 		return std::vector<CellPos>(cells.end() - PaddingCellCount, cells.end());
 	}
 
+	void writeTailLenHighBit(Mat& mat, int tailLen)
+	{
+		const bool isWhite = ((tailLen >> 12) & 1) != 0;
+		for (const auto& cell : getPaddingCells())
+		{
+			mat.at<Vec3b>(cell.row, cell.col) = pixel[isWhite ? White : Black];
+		}
+	}
+
 	void fillAreaNoise(Mat& mat, const DataArea& area)
 	{
 		for (int row = area.top; row < area.top + area.height; ++row)
@@ -225,8 +238,9 @@ namespace Code
 
 	void writeBytesToCells(Mat& mat, const unsigned char* info, int len, const std::vector<CellPos>& cells)
 	{
+		const int mask = (1 << BitsPerCell) - 1;
+		const int totalCells = (len * 8 + BitsPerCell - 1) / BitsPerCell;
 		int cellIndex = 0;
-		const int totalCells = len * (8 / BitsPerCell);
 		for (const auto& cell : cells)
 		{
 			if (cellIndex >= totalCells)
@@ -236,7 +250,12 @@ namespace Code
 			const int bitIndex = cellIndex * BitsPerCell;
 			const int byteIndex = bitIndex / 8;
 			const int offset = bitIndex % 8;
-			const int value = (info[byteIndex] >> offset) & ((1 << BitsPerCell) - 1);
+			int raw = info[byteIndex];
+			if (byteIndex + 1 < len)
+			{
+				raw |= static_cast<int>(info[byteIndex + 1]) << 8;
+			}
+			const int value = (raw >> offset) & mask;
 			mat.at<Vec3b>(cell.row, cell.col) = dataPixel[value];
 			++cellIndex;
 		}
@@ -464,8 +483,9 @@ namespace Code
 			headerValue = 0;
 			break;
 		}
-		headerValue |= static_cast<uint16_t>(tailLen) << 4;
+		headerValue |= static_cast<uint16_t>(tailLen & 0x0FFF) << 4;
 		writeHeaderField(mat, 0, headerValue);
+		writeTailLenHighBit(mat, tailLen);
 #ifdef Code_DEBUG
 		Show_Scale_Img(mat);
 #endif

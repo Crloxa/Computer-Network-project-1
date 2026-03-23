@@ -22,7 +22,7 @@ namespace ImageDecode
 		bool IsEnd;
 	};
 
-	constexpr int BytesPerFrame = 3756;
+	constexpr int BytesPerFrame = 5634;
 	constexpr int FrameSize = 133;
 	constexpr int FrameOutputRate = 10;
 	constexpr int SafeAreaWidth = 2;

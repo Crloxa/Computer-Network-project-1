@@ -50,7 +50,7 @@ namespace ImageDecode
 	constexpr int TopDataWidth = 75;
 	constexpr int DataAreaCount = 5;
 	constexpr int PaddingCellCount = 4;
-	constexpr int BitsPerCell = 2;
+	constexpr int BitsPerCell = 3;
 
 	const std::array<DataArea, DataAreaCount> kDataAreas =
 	{{
@@ -71,19 +71,9 @@ namespace ImageDecode
 		const int b = cell[0];
 		const int g = cell[1];
 		const int r = cell[2];
-		if (b + g + r >= 500)
-		{
-			return 3;
-		}
-		if (b >= g && b >= r)
-		{
-			return 0;
-		}
-		if (g >= b && g >= r)
-		{
-			return 1;
-		}
-		return 2;
+		return ((b >= 128) ? 4 : 0)
+			| ((g >= 128) ? 2 : 0)
+			| ((r >= 128) ? 1 : 0);
 	}
 
 	bool isInsideCornerQuietZone(int row, int col)
@@ -149,6 +139,36 @@ namespace ImageDecode
 		return cells;
 	}
 
+	std::vector<CellPos> getPaddingCells()
+	{
+		std::vector<CellPos> cells;
+		for (const auto& area : kDataAreas)
+		{
+			const auto areaCells = buildAreaCells(area);
+			cells.insert(cells.end(), areaCells.begin(), areaCells.end());
+		}
+		const auto cornerCells = buildCornerDataCells();
+		cells.insert(cells.end(), cornerCells.begin(), cornerCells.end());
+		if (cells.size() <= PaddingCellCount)
+		{
+			return {};
+		}
+		return std::vector<CellPos>(cells.end() - PaddingCellCount, cells.end());
+	}
+
+	int readTailLenHighBit(const Mat& mat)
+	{
+		int whiteCount = 0;
+		for (const auto& cell : getPaddingCells())
+		{
+			if (isWhiteCell(mat.at<Vec3b>(cell.row, cell.col)))
+			{
+				++whiteCount;
+			}
+		}
+		return whiteCount * 2 >= PaddingCellCount ? 1 : 0;
+	}
+
 	uint16_t readHeaderField(const Mat& mat, int fieldId)
 	{
 		uint16_t value = 0;
@@ -191,7 +211,8 @@ namespace ImageDecode
 	{
 		const auto cells = buildMergedDataCells();
 		info.assign(BytesPerFrame, 0);
-		const int totalCells = BytesPerFrame * (8 / BitsPerCell);
+		const int totalCells = (BytesPerFrame * 8 + BitsPerCell - 1) / BitsPerCell;
+		const int mask = (1 << BitsPerCell) - 1;
 		for (int cellIndex = 0;
 			cellIndex < totalCells && cellIndex < static_cast<int>(cells.size());
 			++cellIndex)
@@ -200,7 +221,11 @@ namespace ImageDecode
 			const int byteIndex = bitIndex / 8;
 			const int offset = bitIndex % 8;
 			const int value = readCellValue(mat.at<Vec3b>(cells[cellIndex].row, cells[cellIndex].col));
-			info[byteIndex] |= static_cast<unsigned char>((value & ((1 << BitsPerCell) - 1)) << offset);
+			info[byteIndex] |= static_cast<unsigned char>((value & mask) << offset);
+			if (offset + BitsPerCell > 8 && byteIndex + 1 < BytesPerFrame)
+			{
+				info[byteIndex + 1] |= static_cast<unsigned char>(value >> (8 - offset));
+			}
 		}
 	}
 
@@ -224,7 +249,10 @@ namespace ImageDecode
 
 		const uint16_t headerValue = readHeaderField(mat, 0);
 		parseFrameType(headerValue, imageInfo.IsStart, imageInfo.IsEnd);
-		const int codeLen = headerValue >> 4;
+		const int codeLenLow = headerValue >> 4;
+		const int codeLen = imageInfo.IsEnd
+			? (codeLenLow | (readTailLenHighBit(mat) << 12))
+			: BytesPerFrame;
 		if (codeLen > BytesPerFrame)
 		{
 			return true;
