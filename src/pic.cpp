@@ -1,4 +1,5 @@
 #include "pic.h"
+#include "protocol.h"
 #include <vector>
 #include <cmath>
 #include <algorithm>
@@ -7,6 +8,11 @@ namespace ImgParse {
 
     using namespace std;
     using namespace cv;
+    using Protocol::FinderCenter;
+    using Protocol::FrameSize;
+    using Protocol::OrientationCornerSize;
+    using Protocol::OppositeFinderCenter;
+    using Protocol::SmallQrCenter;
 
     // 静态全局缓存：保存上一次成功解析的透视变换矩阵
     // 用于应对单帧极度模糊或闪光时的时空追踪兜底
@@ -128,28 +134,28 @@ namespace ImgParse {
         // 方向探测器：拉平到 532x532 (133的4倍)，彻底放大定位块差异
         //
         vector<Point2f> dstPointsOuter = {
-            Point2f(0.0f, 0.0f), Point2f(532.0f, 0.0f),
-            Point2f(532.0f, 532.0f), Point2f(0.0f, 532.0f)
+            Point2f(0.0f, 0.0f), Point2f(static_cast<float>(FrameSize), 0.0f),
+            Point2f(static_cast<float>(FrameSize), static_cast<float>(FrameSize)), Point2f(0.0f, static_cast<float>(FrameSize))
         };
 
         Mat M_Outer = getPerspectiveTransform(srcPointsOuter, dstPointsOuter);
-        Mat warped532;
-        warpPerspective(gray, warped532, M_Outer, Size(532, 532), INTER_LINEAR);
+        Mat warpedFrame;
+        warpPerspective(gray, warpedFrame, M_Outer, Size(FrameSize, FrameSize), INTER_LINEAR);
 
         // 探测图二值化
         //
-        Mat binWarped532;
-        threshold(warped532, binWarped532, 0, 255, THRESH_BINARY | THRESH_OTSU);
+        Mat binWarpedFrame;
+        threshold(warpedFrame, binWarpedFrame, 0, 255, THRESH_BINARY | THRESH_OTSU);
 
-        int cornerSize = 88;
+        int cornerSize = OrientationCornerSize;
         Rect tl(0, 0, cornerSize, cornerSize);
-        Rect tr(532 - cornerSize, 0, cornerSize, cornerSize);
-        Rect br(532 - cornerSize, 532 - cornerSize, cornerSize, cornerSize);
-        Rect bl(0, 532 - cornerSize, cornerSize, cornerSize);
+        Rect tr(FrameSize - cornerSize, 0, cornerSize, cornerSize);
+        Rect br(FrameSize - cornerSize, FrameSize - cornerSize, cornerSize, cornerSize);
+        Rect bl(0, FrameSize - cornerSize, cornerSize, cornerSize);
 
         int areas[4] = {
-            getBlackArea(binWarped532(tl)), getBlackArea(binWarped532(tr)),
-            getBlackArea(binWarped532(br)), getBlackArea(binWarped532(bl))
+            getBlackArea(binWarpedFrame(tl)), getBlackArea(binWarpedFrame(tr)),
+            getBlackArea(binWarpedFrame(br)), getBlackArea(binWarpedFrame(bl))
         };
 
         int minArea = areas[0];
@@ -163,18 +169,19 @@ namespace ImgParse {
 
         // 根据检测出的方向，生成映射回标准 133x133 的终极透视矩阵
         //
-        vector<Point2f> finalDst133;
-        if (smallQrIdx == 0)      finalDst133 = { Point2f(133.0f,133.0f), Point2f(0.0f,133.0f), Point2f(0.0f,0.0f), Point2f(133.0f,0.0f) };
-        else if (smallQrIdx == 1) finalDst133 = { Point2f(133.0f,0.0f), Point2f(133.0f,133.0f), Point2f(0.0f,133.0f), Point2f(0.0f,0.0f) };
-        else if (smallQrIdx == 3) finalDst133 = { Point2f(0.0f,133.0f), Point2f(0.0f,0.0f), Point2f(133.0f,0.0f), Point2f(133.0f,133.0f) };
-        else                      finalDst133 = { Point2f(0.0f,0.0f), Point2f(133.0f,0.0f), Point2f(133.0f,133.0f), Point2f(0.0f,133.0f) };
+        const float frameSizeF = static_cast<float>(FrameSize);
+        vector<Point2f> finalDstFrame;
+        if (smallQrIdx == 0)      finalDstFrame = { Point2f(frameSizeF, frameSizeF), Point2f(0.0f, frameSizeF), Point2f(0.0f, 0.0f), Point2f(frameSizeF, 0.0f) };
+        else if (smallQrIdx == 1) finalDstFrame = { Point2f(frameSizeF, 0.0f), Point2f(frameSizeF, frameSizeF), Point2f(0.0f, frameSizeF), Point2f(0.0f, 0.0f) };
+        else if (smallQrIdx == 3) finalDstFrame = { Point2f(0.0f, frameSizeF), Point2f(0.0f, 0.0f), Point2f(frameSizeF, 0.0f), Point2f(frameSizeF, frameSizeF) };
+        else                      finalDstFrame = { Point2f(0.0f, 0.0f), Point2f(frameSizeF, 0.0f), Point2f(frameSizeF, frameSizeF), Point2f(0.0f, frameSizeF) };
 
-        lastValidTransform = getPerspectiveTransform(srcPointsOuter, finalDst133);
+        lastValidTransform = getPerspectiveTransform(srcPointsOuter, finalDstFrame);
 
-        // 完美契合原代码：抛弃抽样，从原灰度图直接裁剪 133 享受平滑抗锯齿
+        // 完美契合原代码：抛弃抽样，从原灰度图直接裁剪 532 享受平滑抗锯齿
         //
         Mat grayWarped;
-        warpPerspective(gray, grayWarped, lastValidTransform, Size(133, 133), INTER_LINEAR);
+        warpPerspective(gray, grayWarped, lastValidTransform, Size(FrameSize, FrameSize), INTER_LINEAR);
 
         Mat binWarped;
         threshold(grayWarped, binWarped, 0, 255, THRESH_BINARY | THRESH_OTSU);
@@ -342,10 +349,10 @@ namespace ImgParse {
 
         vector<Point2f> srcPoints = { TL, TR, BR, BL };
         vector<Point2f> dstPoints = {
-            Point2f(10.0f, 10.0f),
-            Point2f(122.0f, 10.0f),
-            foundBR ? Point2f(126.0f, 126.0f) : Point2f(122.0f, 122.0f),
-            Point2f(10.0f, 122.0f)
+            Point2f(static_cast<float>(FinderCenter), static_cast<float>(FinderCenter)),
+            Point2f(static_cast<float>(OppositeFinderCenter), static_cast<float>(FinderCenter)),
+            foundBR ? Point2f(static_cast<float>(SmallQrCenter), static_cast<float>(SmallQrCenter)) : Point2f(static_cast<float>(OppositeFinderCenter), static_cast<float>(OppositeFinderCenter)),
+            Point2f(static_cast<float>(FinderCenter), static_cast<float>(OppositeFinderCenter))
         };
 
         Mat transformMatrix = getPerspectiveTransform(srcPoints, dstPoints);
@@ -357,7 +364,7 @@ namespace ImgParse {
         // 回归高保真！直接使用原生最高分辨率灰度图裁切，抗锯齿满分
         //
         Mat grayWarped;
-        warpPerspective(gray, grayWarped, transformMatrix, Size(133, 133), INTER_LINEAR);
+        warpPerspective(gray, grayWarped, transformMatrix, Size(FrameSize, FrameSize), INTER_LINEAR);
 
         Mat binWarped;
         threshold(grayWarped, binWarped, 0, 255, THRESH_BINARY | THRESH_OTSU);
@@ -383,20 +390,20 @@ namespace ImgParse {
         // 拦截无形变的原始纯净视频导出帧
         //
         double aspect = (double)srcImg.cols / srcImg.rows;
-        if (aspect > 0.95 && aspect < 1.05 && srcImg.cols > 266) {
+        if (aspect > 0.95 && aspect < 1.05 && srcImg.cols >= FrameSize) {
             Mat grayForDigital;
             if (srcImg.channels() == 3) cvtColor(srcImg, grayForDigital, COLOR_BGR2GRAY);
             else grayForDigital = srcImg.clone();
 
-            disImg.create(133, 133, CV_8UC3);
+            disImg.create(FrameSize, FrameSize, CV_8UC3);
             Mat binRaw;
             threshold(grayForDigital, binRaw, 0, 255, THRESH_BINARY | THRESH_OTSU);
 
-            float stepX = (float)srcImg.cols / 133.0f;
-            float stepY = (float)srcImg.rows / 133.0f;
+            float stepX = static_cast<float>(srcImg.cols) / static_cast<float>(FrameSize);
+            float stepY = static_cast<float>(srcImg.rows) / static_cast<float>(FrameSize);
 
-            for (int r = 0; r < 133; ++r) {
-                for (int c = 0; c < 133; ++c) {
+            for (int r = 0; r < FrameSize; ++r) {
+                for (int c = 0; c < FrameSize; ++c) {
                     int px = std::min(static_cast<int>((c + 0.5f) * stepX), srcImg.cols - 1);
                     int py = std::min(static_cast<int>((r + 0.5f) * stepY), srcImg.rows - 1);
                     uint8_t val = binRaw.at<uint8_t>(py, px);
@@ -441,7 +448,7 @@ namespace ImgParse {
         if (!lastValidTransform.empty()) {
             Mat grayWarped;
 
-            warpPerspective(grayNormal, grayWarped, lastValidTransform, Size(133, 133), INTER_LINEAR);
+            warpPerspective(grayNormal, grayWarped, lastValidTransform, Size(FrameSize, FrameSize), INTER_LINEAR);
 
             Mat binWarped;
             threshold(grayWarped, binWarped, 0, 255, THRESH_BINARY | THRESH_OTSU);

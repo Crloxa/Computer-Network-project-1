@@ -2,11 +2,15 @@
 
 #include <opencv2/opencv.hpp>
 
+#include "protocol.h"
+
+#ifndef Show_Img
 #define Show_Img(src) do\
 {\
 	cv::imshow("src", src);\
 	cv::waitKey();\
 }while (0);
+#endif
 
 namespace ImageDecode
 {
@@ -22,12 +26,12 @@ namespace ImageDecode
 		bool IsEnd;
 	};
 
-	constexpr int BytesPerFrame = 1878;
-	constexpr int FrameSize = 133;
-	constexpr int FrameOutputRate = 10;
-	constexpr int SafeAreaWidth = 2;
-	constexpr int QrPointSize = 21;
-	constexpr int SmallQrPointbias = 7;
+	constexpr int BytesPerFrame = Protocol::BytesPerFrame;
+	constexpr int FrameSize = Protocol::FrameSize;
+	constexpr int FrameOutputRate = Protocol::FrameOutputRate;
+	constexpr int SafeAreaWidth = Protocol::SafeAreaWidth;
+	constexpr int QrPointSize = Protocol::QrPointSize;
+	constexpr int SmallQrPointbias = Protocol::SmallQrPointBias;
 
 	bool Main(Mat& mat, ImageInfo& imageInfo);
 }

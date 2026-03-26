@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <vector>
 
 #include "code.h"
@@ -11,20 +12,19 @@
 
 namespace ImageDecode
 {
-	enum color
-	{
-		Black = 0,
-		White = 7
-	};
-
-	struct DataArea
-	{
-		int top;
-		int left;
-		int height;
-		int width;
-		int trimRight;
-	};
+	using Protocol::BaseCornerReserveSize;
+	using Protocol::BaseFrameSize;
+	using Protocol::BaseSmallQrPointBias;
+	using Protocol::BaseSmallQrPointRadius;
+	using Protocol::DataArea;
+	using Protocol::HeaderCheckBits;
+	using Protocol::HeaderFieldHeight;
+	using Protocol::HeaderFrameBits;
+	using Protocol::HeaderLeft;
+	using Protocol::HeaderMetaBits;
+	using Protocol::HeaderTop;
+	using Protocol::kBaseDataAreas;
+	using Protocol::LayoutScale;
 
 	struct CellPos
 	{
@@ -40,43 +40,23 @@ namespace ImageDecode
 		Normal = 3
 	};
 
-	constexpr int SmallQrPointRadius = 3;
-	constexpr int CornerReserveSize = 21;
-	constexpr int HeaderLeft = 21;
-	constexpr int HeaderTop = 3;
-	constexpr int HeaderFieldBits = 16;
-	constexpr int HeaderWidth = 16;
-	constexpr int TopDataLeft = HeaderLeft + HeaderWidth;
-	constexpr int TopDataWidth = 75;
-	constexpr int DataAreaCount = 5;
-	constexpr int PaddingCellCount = 4;
-
-	const std::array<DataArea, DataAreaCount> kDataAreas =
-	{{
-		{3, TopDataLeft, 3, TopDataWidth, 0},
-		{6, 21, 15, 91, 0},
-		{21, 3, 88, 127, 0},
-		{109, 3, 3, 127, 0},
-		{112, 21, 18, 91, 0}
-	}};
-
 	bool isWhiteCell(const Vec3b& cell)
 	{
 		return cell[0] + cell[1] + cell[2] >= 384;
 	}
 
-	bool isInsideCornerQuietZone(int row, int col)
+	bool isInsideBaseCornerQuietZone(int row, int col)
 	{
-		return row >= 130 || col >= 130;
+		return row >= BaseFrameSize - 3 || col >= BaseFrameSize - 3;
 	}
 
-	bool isInsideCornerSafetyZone(int row, int col)
+	bool isInsideBaseCornerSafetyZone(int row, int col)
 	{
-		const int center = FrameSize - SmallQrPointbias;
-		return std::abs(row - center) <= SmallQrPointRadius + 2 && std::abs(col - center) <= SmallQrPointRadius + 2;
+		const int center = BaseFrameSize - BaseSmallQrPointBias;
+		return std::abs(row - center) <= BaseSmallQrPointRadius + 2 && std::abs(col - center) <= BaseSmallQrPointRadius + 2;
 	}
 
-	std::vector<CellPos> buildAreaCells(const DataArea& area)
+	std::vector<CellPos> buildBaseAreaCells(const DataArea& area)
 	{
 		std::vector<CellPos> cells;
 		for (int row = area.top; row < area.top + area.height; ++row)
@@ -90,22 +70,53 @@ namespace ImageDecode
 		return cells;
 	}
 
+	void appendScaledSubcells(std::vector<CellPos>& cells, const CellPos& baseCell)
+	{
+		const int rowStart = Protocol::scaleCoord(baseCell.row);
+		const int colStart = Protocol::scaleCoord(baseCell.col);
+		for (int row = rowStart; row < rowStart + LayoutScale; ++row)
+		{
+			for (int col = colStart; col < colStart + LayoutScale; ++col)
+			{
+				cells.push_back({ row, col });
+			}
+		}
+	}
+
 	std::vector<CellPos> buildCornerDataCells()
 	{
 		std::vector<CellPos> cells;
-		for (int row = FrameSize - CornerReserveSize; row < FrameSize; ++row)
+		for (int row = BaseFrameSize - BaseCornerReserveSize; row < BaseFrameSize; ++row)
 		{
-			for (int col = FrameSize - CornerReserveSize; col < FrameSize; ++col)
+			for (int col = BaseFrameSize - BaseCornerReserveSize; col < BaseFrameSize; ++col)
 			{
-				if (isInsideCornerQuietZone(row, col))
+				if (isInsideBaseCornerQuietZone(row, col))
 				{
 					continue;
 				}
-				if (isInsideCornerSafetyZone(row, col))
+				if (isInsideBaseCornerSafetyZone(row, col))
 				{
 					continue;
 				}
-				cells.push_back({ row, col });
+				appendScaledSubcells(cells, { row, col });
+			}
+		}
+		return cells;
+	}
+
+	std::vector<CellPos> buildHeaderPayloadCells()
+	{
+		std::vector<CellPos> cells;
+		const std::array<int, 3> usedBits = { HeaderMetaBits, HeaderCheckBits, HeaderFrameBits };
+		for (int fieldId = 0; fieldId < static_cast<int>(usedBits.size()); ++fieldId)
+		{
+			const int top = HeaderTop + fieldId * HeaderFieldHeight;
+			for (int row = top; row < top + HeaderFieldHeight; ++row)
+			{
+				for (int col = HeaderLeft + usedBits[fieldId]; col < HeaderLeft + Protocol::HeaderWidth; ++col)
+				{
+					cells.push_back({ row, col });
+				}
 			}
 		}
 		return cells;
@@ -114,37 +125,55 @@ namespace ImageDecode
 	std::vector<CellPos> buildMergedDataCells()
 	{
 		std::vector<CellPos> cells;
-		for (const auto& area : kDataAreas)
+		const auto headerCells = buildHeaderPayloadCells();
+		cells.insert(cells.end(), headerCells.begin(), headerCells.end());
+		for (const auto& area : kBaseDataAreas)
 		{
-			const auto areaCells = buildAreaCells(area);
-			cells.insert(cells.end(), areaCells.begin(), areaCells.end());
+			for (const auto& baseCell : buildBaseAreaCells(area))
+			{
+				appendScaledSubcells(cells, baseCell);
+			}
 		}
 		const auto cornerCells = buildCornerDataCells();
 		cells.insert(cells.end(), cornerCells.begin(), cornerCells.end());
-		if (cells.size() > PaddingCellCount)
+		if (cells.size() > Protocol::PaddingCellCount)
 		{
-			cells.resize(cells.size() - PaddingCellCount);
+			cells.resize(cells.size() - Protocol::PaddingCellCount);
 		}
 		return cells;
 	}
 
-	uint16_t readHeaderField(const Mat& mat, int fieldId)
+	bool isWhiteHeaderBit(const Mat& mat, int fieldId, int bit)
 	{
-		uint16_t value = 0;
-		const int row = HeaderTop + fieldId;
-		for (int bit = 0; bit < HeaderFieldBits; ++bit)
+		const int top = HeaderTop + fieldId * HeaderFieldHeight;
+		const int col = HeaderLeft + bit;
+		int whiteCount = 0;
+		for (int row = top; row < top + HeaderFieldHeight; ++row)
 		{
-			if (isWhiteCell(mat.at<Vec3b>(row, HeaderLeft + bit)))
+			if (isWhiteCell(mat.at<Vec3b>(row, col)))
 			{
-				value |= static_cast<uint16_t>(1u << bit);
+				++whiteCount;
+			}
+		}
+		return whiteCount * 2 >= HeaderFieldHeight;
+	}
+
+	uint32_t readHeaderField(const Mat& mat, int fieldId, int bitCount)
+	{
+		uint32_t value = 0;
+		for (int bit = 0; bit < bitCount; ++bit)
+		{
+			if (isWhiteHeaderBit(mat, fieldId, bit))
+			{
+				value |= static_cast<uint32_t>(1u << bit);
 			}
 		}
 		return value;
 	}
 
-	FrameType parseFrameType(uint16_t headerValue, bool& isStart, bool& isEnd)
+	FrameType parseFrameType(uint32_t headerValue, bool& isStart, bool& isEnd)
 	{
-		const uint16_t flagBits = headerValue & 0xF;
+		const uint32_t flagBits = headerValue & 0xF;
 		switch (flagBits)
 		{
 		case 0b0011:
@@ -181,6 +210,25 @@ namespace ImageDecode
 		}
 	}
 
+	unsigned char payloadWhiteningMask(uint16_t frameNo, int byteIndex)
+	{
+		uint32_t value = static_cast<uint32_t>(frameNo) * 0x9E3779B1u + static_cast<uint32_t>(byteIndex);
+		value ^= value >> 16;
+		value *= 0x7FEB352Du;
+		value ^= value >> 15;
+		value *= 0x846CA68Bu;
+		value ^= value >> 16;
+		return static_cast<unsigned char>(value & 0xFFu);
+	}
+
+	void unwhitenPayload(std::vector<unsigned char>& info, uint16_t frameNo)
+	{
+		for (int i = 0; i < static_cast<int>(info.size()); ++i)
+		{
+			info[i] = static_cast<unsigned char>(info[i] ^ payloadWhiteningMask(frameNo, i));
+		}
+	}
+
 	bool hasLegalSize(const Mat& mat)
 	{
 		return mat.rows == FrameSize && mat.cols == FrameSize && mat.type() == CV_8UC3;
@@ -199,19 +247,20 @@ namespace ImageDecode
 			return true;
 		}
 
-		const uint16_t headerValue = readHeaderField(mat, 0);
+		const uint32_t headerValue = readHeaderField(mat, 0, HeaderMetaBits);
 		parseFrameType(headerValue, imageInfo.IsStart, imageInfo.IsEnd);
-		const int codeLen = headerValue >> 4;
+		const int codeLen = static_cast<int>(headerValue >> 4);
 		if (codeLen > BytesPerFrame)
 		{
 			return true;
 		}
 
-		imageInfo.CheckCode = readHeaderField(mat, 1);
-		imageInfo.FrameBase = readHeaderField(mat, 2);
+		imageInfo.CheckCode = static_cast<uint16_t>(readHeaderField(mat, 1, HeaderCheckBits));
+		imageInfo.FrameBase = static_cast<uint16_t>(readHeaderField(mat, 2, HeaderFrameBits));
 
 		std::vector<unsigned char> payload;
 		readPayload(mat, payload);
+		unwhitenPayload(payload, imageInfo.FrameBase);
 		payload.resize(codeLen);
 		imageInfo.Info.swap(payload);
 

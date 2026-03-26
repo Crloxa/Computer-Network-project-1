@@ -13,12 +13,6 @@
 #include <opencv2/opencv.hpp>
 #include <opencv2/core/utils/logger.hpp> 
 
-#define Show_Img(src) do\
-{\
-	cv::imshow("DEBUG", src);\
-	cv::waitKey();\
-}while (0);
-
 int FileToVideo(const char* filePath, const char* videoPath, int timLim = INT_MAX, int fps = 15)
 {
 	FILE* fp = fopen(filePath, "rb");
