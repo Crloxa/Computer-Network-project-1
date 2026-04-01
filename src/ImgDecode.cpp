@@ -40,24 +40,24 @@ namespace ImageDecode
 		Normal = 3
 	};
 
-	constexpr int SmallQrPointRadius = 3;
-	constexpr int CornerReserveSize = 21;
-	constexpr int HeaderLeft = 21;
-	constexpr int HeaderTop = 3;
+	constexpr int SmallQrPointRadius = 6;
+	constexpr int CornerReserveSize = 42;
+	constexpr int HeaderLeft = 42;
+	constexpr int HeaderTop = 6;
 	constexpr int HeaderFieldBits = 16;
 	constexpr int HeaderWidth = 16;
 	constexpr int TopDataLeft = HeaderLeft + HeaderWidth;
-	constexpr int TopDataWidth = 75;
+	constexpr int TopDataWidth = 166;
 	constexpr int DataAreaCount = 5;
-	constexpr int PaddingCellCount = 4;
+	constexpr int PaddingCellCount = 6;
 
 	const std::array<DataArea, DataAreaCount> kDataAreas =
 	{{
-		{3, TopDataLeft, 3, TopDataWidth, 0},
-		{6, 21, 15, 91, 0},
-		{21, 3, 88, 127, 0},
-		{109, 3, 3, 127, 0},
-		{112, 21, 18, 91, 0}
+		{6, 58, 3, 166, 0},
+		{9, 42, 33, 182, 0},
+		{42, 5, 179, 256, 0},
+		{221, 5, 3, 256, 0},
+		{224, 42, 37, 182, 0}
 	}};
 
 	bool isWhiteCell(const Vec3b& cell)
@@ -67,7 +67,7 @@ namespace ImageDecode
 
 	bool isInsideCornerQuietZone(int row, int col)
 	{
-		return row >= 130 || col >= 130;
+		return row >= 261 || col >= 261;
 	}
 
 	bool isInsideCornerSafetyZone(int row, int col)

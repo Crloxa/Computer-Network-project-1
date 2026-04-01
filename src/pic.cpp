@@ -125,7 +125,7 @@ namespace ImgParse {
             return atan2(a.y - centerOuter.y, a.x - centerOuter.x) < atan2(b.y - centerOuter.y, b.x - centerOuter.x);
             });
 
-        // 方向探测器：拉平到 532x532 (133的4倍)，彻底放大定位块差异
+        // 方向探测器：拉平到 532x532 (266的2倍)，彻底放大定位块差异
         //
         vector<Point2f> dstPointsOuter = {
             Point2f(0.0f, 0.0f), Point2f(532.0f, 0.0f),
@@ -161,20 +161,20 @@ namespace ImgParse {
             }
         }
 
-        // 根据检测出的方向，生成映射回标准 133x133 的终极透视矩阵
+        // 根据检测出的方向，生成映射回标准 266x266 的终极透视矩阵
         //
-        vector<Point2f> finalDst133;
-        if (smallQrIdx == 0)      finalDst133 = { Point2f(133.0f,133.0f), Point2f(0.0f,133.0f), Point2f(0.0f,0.0f), Point2f(133.0f,0.0f) };
-        else if (smallQrIdx == 1) finalDst133 = { Point2f(133.0f,0.0f), Point2f(133.0f,133.0f), Point2f(0.0f,133.0f), Point2f(0.0f,0.0f) };
-        else if (smallQrIdx == 3) finalDst133 = { Point2f(0.0f,133.0f), Point2f(0.0f,0.0f), Point2f(133.0f,0.0f), Point2f(133.0f,133.0f) };
-        else                      finalDst133 = { Point2f(0.0f,0.0f), Point2f(133.0f,0.0f), Point2f(133.0f,133.0f), Point2f(0.0f,133.0f) };
+        vector<Point2f> finalDst266;
+        if (smallQrIdx == 0)      finalDst266 = { Point2f(266.0f,266.0f), Point2f(0.0f,266.0f), Point2f(0.0f,0.0f), Point2f(266.0f,0.0f) };
+        else if (smallQrIdx == 1) finalDst266 = { Point2f(266.0f,0.0f), Point2f(266.0f,266.0f), Point2f(0.0f,266.0f), Point2f(0.0f,0.0f) };
+        else if (smallQrIdx == 3) finalDst266 = { Point2f(0.0f,266.0f), Point2f(0.0f,0.0f), Point2f(266.0f,0.0f), Point2f(266.0f,266.0f) };
+        else                      finalDst266 = { Point2f(0.0f,0.0f), Point2f(266.0f,0.0f), Point2f(266.0f,266.0f), Point2f(0.0f,266.0f) };
 
-        lastValidTransform = getPerspectiveTransform(srcPointsOuter, finalDst133);
+        lastValidTransform = getPerspectiveTransform(srcPointsOuter, finalDst266);
 
-        // 完美契合原代码：抛弃抽样，从原灰度图直接裁剪 133 享受平滑抗锯齿
+        // 完美契合原代码：抛弃抽样，从原灰度图直接裁剪 266 享受平滑抗锯齿
         //
         Mat grayWarped;
-        warpPerspective(gray, grayWarped, lastValidTransform, Size(133, 133), INTER_LINEAR);
+        warpPerspective(gray, grayWarped, lastValidTransform, Size(266, 266), INTER_LINEAR);
 
         Mat binWarped;
         threshold(grayWarped, binWarped, 0, 255, THRESH_BINARY | THRESH_OTSU);
@@ -342,10 +342,10 @@ namespace ImgParse {
 
         vector<Point2f> srcPoints = { TL, TR, BR, BL };
         vector<Point2f> dstPoints = {
-            Point2f(10.0f, 10.0f),
-            Point2f(122.0f, 10.0f),
-            foundBR ? Point2f(126.0f, 126.0f) : Point2f(122.0f, 122.0f),
-            Point2f(10.0f, 122.0f)
+            Point2f(21.0f, 21.0f),
+            Point2f(245.0f, 21.0f),
+            foundBR ? Point2f(252.0f, 252.0f) : Point2f(245.0f, 245.0f),
+            Point2f(21.0f, 245.0f)
         };
 
         Mat transformMatrix = getPerspectiveTransform(srcPoints, dstPoints);
@@ -357,7 +357,7 @@ namespace ImgParse {
         // 回归高保真！直接使用原生最高分辨率灰度图裁切，抗锯齿满分
         //
         Mat grayWarped;
-        warpPerspective(gray, grayWarped, transformMatrix, Size(133, 133), INTER_LINEAR);
+        warpPerspective(gray, grayWarped, transformMatrix, Size(266, 266), INTER_LINEAR);
 
         Mat binWarped;
         threshold(grayWarped, binWarped, 0, 255, THRESH_BINARY | THRESH_OTSU);
@@ -383,20 +383,20 @@ namespace ImgParse {
         // 拦截无形变的原始纯净视频导出帧
         //
         double aspect = (double)srcImg.cols / srcImg.rows;
-        if (aspect > 0.95 && aspect < 1.05 && srcImg.cols > 266) {
+        if (aspect > 0.95 && aspect < 1.05 && srcImg.cols > 532) {
             Mat grayForDigital;
             if (srcImg.channels() == 3) cvtColor(srcImg, grayForDigital, COLOR_BGR2GRAY);
             else grayForDigital = srcImg.clone();
 
-            disImg.create(133, 133, CV_8UC3);
+            disImg.create(266, 266, CV_8UC3);
             Mat binRaw;
             threshold(grayForDigital, binRaw, 0, 255, THRESH_BINARY | THRESH_OTSU);
 
-            float stepX = (float)srcImg.cols / 133.0f;
-            float stepY = (float)srcImg.rows / 133.0f;
+            float stepX = (float)srcImg.cols / 266.0f;
+            float stepY = (float)srcImg.rows / 266.0f;
 
-            for (int r = 0; r < 133; ++r) {
-                for (int c = 0; c < 133; ++c) {
+            for (int r = 0; r < 266; ++r) {
+                for (int c = 0; c < 266; ++c) {
                     int px = std::min(static_cast<int>((c + 0.5f) * stepX), srcImg.cols - 1);
                     int py = std::min(static_cast<int>((r + 0.5f) * stepY), srcImg.rows - 1);
                     uint8_t val = binRaw.at<uint8_t>(py, px);
@@ -441,7 +441,7 @@ namespace ImgParse {
         if (!lastValidTransform.empty()) {
             Mat grayWarped;
 
-            warpPerspective(grayNormal, grayWarped, lastValidTransform, Size(133, 133), INTER_LINEAR);
+            warpPerspective(grayNormal, grayWarped, lastValidTransform, Size(266, 266), INTER_LINEAR);
 
             Mat binWarped;
             threshold(grayWarped, binWarped, 0, 255, THRESH_BINARY | THRESH_OTSU);

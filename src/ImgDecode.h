@@ -22,12 +22,12 @@ namespace ImageDecode
 		bool IsEnd;
 	};
 
-	constexpr int BytesPerFrame = 1878;
-	constexpr int FrameSize = 133;
+	constexpr int BytesPerFrame = 7613;
+	constexpr int FrameSize = 266;
 	constexpr int FrameOutputRate = 10;
-	constexpr int SafeAreaWidth = 2;
-	constexpr int QrPointSize = 21;
-	constexpr int SmallQrPointbias = 7;
+	constexpr int SafeAreaWidth = 4;
+	constexpr int QrPointSize = 42;
+	constexpr int SmallQrPointbias = 14;
 
 	bool Main(Mat& mat, ImageInfo& imageInfo);
 }
