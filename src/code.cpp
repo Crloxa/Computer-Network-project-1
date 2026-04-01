@@ -30,7 +30,7 @@ namespace Code
 	constexpr int QrPointSize = 42;
 	constexpr int SmallQrPointbias = 14;
 	constexpr int SmallQrPointSize = 14;
-	constexpr int SmallQrPointOffset = 6;
+	constexpr int SmallQrPointOffset = 0; // 贴紧右下角，偏移量为 0
 	constexpr int CornerReserveSize = 42;
 	constexpr int HeaderHeight = 3;
 	constexpr int HeaderWidth = 16;

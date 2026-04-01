@@ -49,7 +49,7 @@ namespace ImageDecode
 	};
 
 	constexpr int SmallQrPointSize = 14;
-	constexpr int SmallQrPointOffset = 6;
+	constexpr int SmallQrPointOffset = 0; // 贴紧右下角，偏移量为 0
 	constexpr int CornerReserveSize = 42;
 	constexpr int HeaderLeft = 42;
 	constexpr int HeaderTop = 6;
