@@ -28,8 +28,10 @@ namespace Code
 	constexpr int FrameOutputSize = FrameSize * FrameOutputRate;
 	constexpr int SafeAreaWidth = 4;
 	constexpr int QrPointSize = 42;
-	constexpr int SmallQrPointbias = 14;  // 安全区内定位中心距右下边缘距离（2× main）
-	constexpr int SmallQrPointRadius = 6; // 定位块半径（2× main 的 radius=3）
+	constexpr int SmallQrPointbias = 14;
+	constexpr int SmallQrPointRadius = 6;
+	constexpr int SmallQrPointStart = FrameSize - SmallQrPointbias - SmallQrPointRadius;     // 246
+	constexpr int SmallQrPointEnd = FrameSize - SmallQrPointbias + SmallQrPointRadius + 1;   // 259（严格 14x14）
 	constexpr int CornerReserveSize = 42;
 	constexpr int HeaderHeight = 3;
 	constexpr int HeaderWidth = 16;
@@ -109,24 +111,25 @@ namespace Code
 		{"corner_data_v", 224, 224, 37, 18, Vec3b(0, 200, 255)},
 		{"corner_data_h", 224, 242, 18, 18, Vec3b(0, 200, 255)},
 		{"corner", FrameSize - CornerReserveSize, FrameSize - CornerReserveSize, CornerReserveSize, CornerReserveSize, Vec3b(255, 0, 255)},
-		{"small_qr", FrameSize - SmallQrPointbias - SmallQrPointRadius, FrameSize - SmallQrPointbias - SmallQrPointRadius, SmallQrPointRadius * 2 + 1, SmallQrPointRadius * 2 + 1, Vec3b(0, 128, 255)}
+		{"small_qr", SmallQrPointStart, SmallQrPointStart, SmallQrPointEnd - SmallQrPointStart + 1, SmallQrPointEnd - SmallQrPointStart + 1, Vec3b(0, 128, 255)}
 	}};
 
 	bool isInsideSmallQrPoint(int row, int col)
 	{
-		const int center = FrameSize - SmallQrPointbias;
-		return std::abs(row - center) <= SmallQrPointRadius && std::abs(col - center) <= SmallQrPointRadius;
+		return row >= SmallQrPointStart && row <= SmallQrPointEnd
+			&& col >= SmallQrPointStart && col <= SmallQrPointEnd;
 	}
 
 	bool isInsideCornerQuietZone(int row, int col)
 	{
-		return row >= 260 || col >= 260; // 266-6=260，与 main 分支 133-3=130 等比
+		return row >= (SmallQrPointEnd + 1) || col >= (SmallQrPointEnd + 1);
 	}
 
 	bool isInsideCornerSafetyZone(int row, int col)
 	{
-		const int center = FrameSize - SmallQrPointbias;
-		return std::abs(row - center) <= SmallQrPointRadius + 2 && std::abs(col - center) <= SmallQrPointRadius + 2;
+		const int safetyStart = SmallQrPointStart - 4; // 严格对应 main 的 ±2 安全圈按 2× 放大
+		const int safetyEnd = SmallQrPointEnd + 4;
+		return row >= safetyStart && row <= safetyEnd && col >= safetyStart && col <= safetyEnd;
 	}
 
 	void fillBinaryNoiseCell(Vec3b& cell)
@@ -355,19 +358,26 @@ namespace Code
 
 	void drawSmallQrPoint(Mat& mat)
 	{
-		const int center = FrameSize - SmallQrPointbias;
-		// 按 1:1:3:1:1 比例绘制（13 像素直径，最近近似为 2:2:5:2:2）：
-		// 索引 0-2 → 中心黑（5 格宽），索引 3-4 → 白环（各 2 格），索引 5-6 → 外黑（各 2 格）
-		const Vec3b vec3bsmall[7] = {
-			pixel[Black], pixel[Black], pixel[Black],  // dist 0,1,2 → 中心黑
-			pixel[White], pixel[White],                // dist 3,4   → 白环
-			pixel[Black], pixel[Black],                // dist 5,6   → 外黑
-		};
-		for (int i = -SmallQrPointRadius; i <= SmallQrPointRadius; ++i)
+		// 与 main 分支 7x7 小定位块完全同图案（[B,B,W,B]），逐像素 2× 放大为 14x14
+		const Vec3b mainPattern[4] =
 		{
-			for (int j = -SmallQrPointRadius; j <= SmallQrPointRadius; ++j)
+			pixel[Black],
+			pixel[Black],
+			pixel[White],
+			pixel[Black]
+		};
+		for (int r = 0; r < 7; ++r)
+		{
+			for (int c = 0; c < 7; ++c)
 			{
-				mat.at<Vec3b>(center + i, center + j) = vec3bsmall[std::max(std::abs(i), std::abs(j))];
+				const int dist = std::max(std::abs(r - 3), std::abs(c - 3));
+				const Vec3b color = mainPattern[dist];
+				const int rr = SmallQrPointStart + r * 2;
+				const int cc = SmallQrPointStart + c * 2;
+				mat.at<Vec3b>(rr, cc) = color;
+				mat.at<Vec3b>(rr + 1, cc) = color;
+				mat.at<Vec3b>(rr, cc + 1) = color;
+				mat.at<Vec3b>(rr + 1, cc + 1) = color;
 			}
 		}
 	}

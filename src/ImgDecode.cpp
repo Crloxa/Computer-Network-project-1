@@ -50,6 +50,8 @@ namespace ImageDecode
 
 	constexpr int SmallQrPointRadius = 6; // 2× main-branch radius (3 × 2)
 	constexpr int CornerReserveSize = 42;
+	constexpr int SmallQrPointStart = FrameSize - SmallQrPointbias - SmallQrPointRadius;     // 246
+	constexpr int SmallQrPointEnd = FrameSize - SmallQrPointbias + SmallQrPointRadius + 1;   // 259（严格 14x14）
 	constexpr int HeaderLeft = 42;
 	constexpr int HeaderTop = 6;
 	constexpr int HeaderFieldBits = 16;
@@ -75,13 +77,14 @@ namespace ImageDecode
 
 	bool isInsideCornerQuietZone(int row, int col)
 	{
-		return row >= 260 || col >= 260; // 266-6=260，与 main 分支 133-3=130 等比
+		return row >= (SmallQrPointEnd + 1) || col >= (SmallQrPointEnd + 1);
 	}
 
 	bool isInsideCornerSafetyZone(int row, int col)
 	{
-		const int center = FrameSize - SmallQrPointbias;
-		return std::abs(row - center) <= SmallQrPointRadius + 2 && std::abs(col - center) <= SmallQrPointRadius + 2;
+		const int safetyStart = SmallQrPointStart - 4; // 严格对应 main 的 ±2 安全圈按 2× 放大
+		const int safetyEnd = SmallQrPointEnd + 4;
+		return row >= safetyStart && row <= safetyEnd && col >= safetyStart && col <= safetyEnd;
 	}
 
 	std::vector<CellPos> buildAreaCells(const DataArea& area)
