@@ -22,9 +22,12 @@ set(SRC_FILES
 # 头文件：使用绝对路径，确保编译器能找到 OpenCV 和 ffmpeg 头文件
 include_directories(
     ${CMAKE_SOURCE_DIR}/src
-    ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/ffmpeg/include
 )
+
+if(WIN32)
+    include_directories(${CMAKE_SOURCE_DIR}/include)
+endif()
 
 if(WIN32)
     # OpenCV 库绝对路径，避免 link_directories + 短名称在 MSVC 下不可靠的问题
