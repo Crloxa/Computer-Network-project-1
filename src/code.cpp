@@ -120,7 +120,7 @@ namespace Code
 
 	bool isInsideCornerQuietZone(int row, int col)
 	{
-		return row >= 261 || col >= 261;
+		return row >= 260 || col >= 260; // 266-6=260，与 main 分支 133-3=130 等比
 	}
 
 	bool isInsideCornerSafetyZone(int row, int col)
@@ -356,10 +356,12 @@ namespace Code
 	void drawSmallQrPoint(Mat& mat)
 	{
 		const int center = FrameSize - SmallQrPointbias;
-		// 2× 缩放自 main 分支的 [B,B,W,B]，每环宽度翻倍：[B,B,B,B,W,W,B]
+		// 按 1:1:3:1:1 比例绘制（13 像素直径，最近近似为 2:2:5:2:2）：
+		// 索引 0-2 → 中心黑（5 格宽），索引 3-4 → 白环（各 2 格），索引 5-6 → 外黑（各 2 格）
 		const Vec3b vec3bsmall[7] = {
-			pixel[Black], pixel[Black], pixel[Black], pixel[Black],
-			pixel[White], pixel[White], pixel[Black],
+			pixel[Black], pixel[Black], pixel[Black],  // dist 0,1,2 → 中心黑
+			pixel[White], pixel[White],                // dist 3,4   → 白环
+			pixel[Black], pixel[Black],                // dist 5,6   → 外黑
 		};
 		for (int i = -SmallQrPointRadius; i <= SmallQrPointRadius; ++i)
 		{

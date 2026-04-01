@@ -75,7 +75,7 @@ namespace ImageDecode
 
 	bool isInsideCornerQuietZone(int row, int col)
 	{
-		return row >= 261 || col >= 261;
+		return row >= 260 || col >= 260; // 266-6=260，与 main 分支 133-3=130 等比
 	}
 
 	bool isInsideCornerSafetyZone(int row, int col)
