@@ -209,6 +209,11 @@ namespace ImgParse {
         GaussianBlur(small_img, blurred, Size(5, 5), 0);
         adaptiveThreshold(blurred, binaryForContours, 255, ADAPTIVE_THRESH_GAUSSIAN_C, THRESH_BINARY_INV, 31, 10);
 
+        // 先做开运算去掉散点噪声，避免凭空黑点撕裂定位块
+        //
+        Mat kernelOpen = getStructuringElement(MORPH_ELLIPSE, Size(3, 3));
+        morphologyEx(binaryForContours, binaryForContours, MORPH_OPEN, kernelOpen);
+
         Mat kernel = getStructuringElement(MORPH_CROSS, Size(2, 2));
         Mat closedBinary;
         morphologyEx(binaryForContours, closedBinary, MORPH_CLOSE, kernel);
@@ -229,9 +234,11 @@ namespace ImgParse {
             double area1 = contourArea(contours[c1]);
             double area2 = contourArea(contours[c2]);
 
-            // 面积门槛等比折算，放过小图情况
+            // 面积门槛按当前处理分辨率动态设置，过滤掉二值化产生的散点伪轮廓
             //
-            if (area0 < 15.0 * scale * scale) continue;
+            // 0.00002 = 0.002% 图像面积：抑制散点噪声，同时保留定位块候选轮廓
+            double minContourArea = std::max(80.0, 0.00002 * static_cast<double>(small_img.cols) * small_img.rows);
+            if (area0 < minContourArea) continue;
 
             double r01 = area0 / max(area1, 1.0);
             double r12 = area1 / max(area2, 1.0);
