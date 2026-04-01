@@ -2,12 +2,17 @@
 #include <vector>
 #include <cmath>
 #include <algorithm>
-#include <array>
 
 namespace ImgParse {
 
     using namespace std;
     using namespace cv;
+    constexpr int kOutputSize = 266;
+    constexpr int kScaleFactor = 2;
+    constexpr int kDetectorScale = 4;
+    constexpr int kV5Frames = 3;
+    constexpr float kAspectMin = 0.95f;
+    constexpr float kAspectMax = 1.05f;
 
     // 静态全局缓存：保存上一次成功解析的透视变换矩阵
     // 用于应对单帧极度模糊或闪光时的时空追踪兜底
@@ -18,79 +23,6 @@ namespace ImgParse {
         Point2f center;
         double area;
     };
-
-    bool isNearlyInteger(double value, double tolerance = 0.08) {
-        return std::abs(value - std::round(value)) <= tolerance;
-    }
-
-    bool hasLikelyWhiteBorder(const Mat& binImg, int borderPx) {
-        if (binImg.empty() || binImg.type() != CV_8UC1) return false;
-        borderPx = std::max(1, borderPx);
-        if (binImg.rows <= borderPx * 2 || binImg.cols <= borderPx * 2) return false;
-
-        const Rect top(0, 0, binImg.cols, borderPx);
-        const Rect bottom(0, binImg.rows - borderPx, binImg.cols, borderPx);
-        const Rect left(0, borderPx, borderPx, binImg.rows - borderPx * 2);
-        const Rect right(binImg.cols - borderPx, borderPx, borderPx, binImg.rows - borderPx * 2);
-
-        const Mat topBand = binImg(top);
-        const Mat bottomBand = binImg(bottom);
-        const Mat leftBand = binImg(left);
-        const Mat rightBand = binImg(right);
-
-        const int whitePixels =
-            countNonZero(topBand) + countNonZero(bottomBand) + countNonZero(leftBand) + countNonZero(rightBand);
-        const int totalPixels = top.area() + bottom.area() + left.area() + right.area();
-        if (totalPixels <= 0) return false;
-        const double whiteRatio = static_cast<double>(whitePixels) / static_cast<double>(totalPixels);
-        return whiteRatio > 0.90;
-    }
-
-    int countFinderProbeMatches(const Mat& binWarped, bool invert) {
-        if (binWarped.rows != 266 || binWarped.cols != 266 || binWarped.type() != CV_8UC1) return 0;
-
-        struct ProbePoint {
-            int row;
-            int col;
-            bool expectBlack;
-        };
-
-        const std::array<ProbePoint, 16> probes = { {
-            {21, 21, true}, {21, 30, false}, {21, 34, true}, {21, 39, false},
-            {21, 245, true}, {21, 236, false}, {21, 232, true}, {21, 227, false},
-            {245, 21, true}, {236, 21, false}, {232, 21, true}, {227, 21, false},
-            {252, 252, true}, {249, 249, false}, {247, 247, true}, {258, 258, true}
-        } };
-
-        int match = 0;
-        for (const auto& p : probes) {
-            if (p.row < 0 || p.row >= binWarped.rows || p.col < 0 || p.col >= binWarped.cols) {
-                continue;
-            }
-            const bool black = binWarped.at<uint8_t>(p.row, p.col) < 128;
-            const bool testBlack = invert ? !black : black;
-            if (testBlack == p.expectBlack) {
-                ++match;
-            }
-        }
-        return match;
-    }
-
-    bool validateFinderPattern266(const Mat& binWarped) {
-        const int direct = countFinderProbeMatches(binWarped, false);
-        const int inverted = countFinderProbeMatches(binWarped, true);
-        return std::max(direct, inverted) >= 13;
-    }
-
-    void normalizeBinaryPolarity(Mat& binWarped) {
-        if (binWarped.rows != 266 || binWarped.cols != 266 || binWarped.type() != CV_8UC1) return;
-        const int directMatch = countFinderProbeMatches(binWarped, false);
-        const int invertedMatch = countFinderProbeMatches(binWarped, true);
-
-        if (invertedMatch > directMatch) {
-            bitwise_not(binWarped, binWarped);
-        }
-    }
 
     // 统计局部区域黑色像素的面积，用于 V5 兜底判断方向
     // 【核心修复】：传入的 corner 已经是全局二值化图像
@@ -199,31 +131,32 @@ namespace ImgParse {
             return atan2(a.y - centerOuter.y, a.x - centerOuter.x) < atan2(b.y - centerOuter.y, b.x - centerOuter.x);
             });
 
-        // 方向探测器：拉平到 532x532 (266的2倍)，彻底放大定位块差异
+        // 方向探测器：拉平到 1064x1064 (266的4倍)，彻底放大定位块差异
         //
+        const float detectorSize = static_cast<float>(kOutputSize * kDetectorScale);
         vector<Point2f> dstPointsOuter = {
-            Point2f(0.0f, 0.0f), Point2f(532.0f, 0.0f),
-            Point2f(532.0f, 532.0f), Point2f(0.0f, 532.0f)
+            Point2f(0.0f, 0.0f), Point2f(detectorSize, 0.0f),
+            Point2f(detectorSize, detectorSize), Point2f(0.0f, detectorSize)
         };
 
         Mat M_Outer = getPerspectiveTransform(srcPointsOuter, dstPointsOuter);
-        Mat warped532;
-        warpPerspective(gray, warped532, M_Outer, Size(532, 532), INTER_LINEAR);
+        Mat warpedDetector;
+        warpPerspective(gray, warpedDetector, M_Outer, Size(kOutputSize * kDetectorScale, kOutputSize * kDetectorScale), INTER_LINEAR);
 
         // 探测图二值化
         //
-        Mat binWarped532;
-        threshold(warped532, binWarped532, 0, 255, THRESH_BINARY | THRESH_OTSU);
+        Mat binWarpedDetector;
+        threshold(warpedDetector, binWarpedDetector, 0, 255, THRESH_BINARY | THRESH_OTSU);
 
-        int cornerSize = 88;
+        int cornerSize = 88 * kScaleFactor;
         Rect tl(0, 0, cornerSize, cornerSize);
-        Rect tr(532 - cornerSize, 0, cornerSize, cornerSize);
-        Rect br(532 - cornerSize, 532 - cornerSize, cornerSize, cornerSize);
-        Rect bl(0, 532 - cornerSize, cornerSize, cornerSize);
+        Rect tr(kOutputSize * kDetectorScale - cornerSize, 0, cornerSize, cornerSize);
+        Rect br(kOutputSize * kDetectorScale - cornerSize, kOutputSize * kDetectorScale - cornerSize, cornerSize, cornerSize);
+        Rect bl(0, kOutputSize * kDetectorScale - cornerSize, cornerSize, cornerSize);
 
         int areas[4] = {
-            getBlackArea(binWarped532(tl)), getBlackArea(binWarped532(tr)),
-            getBlackArea(binWarped532(br)), getBlackArea(binWarped532(bl))
+            getBlackArea(binWarpedDetector(tl)), getBlackArea(binWarpedDetector(tr)),
+            getBlackArea(binWarpedDetector(br)), getBlackArea(binWarpedDetector(bl))
         };
 
         int minArea = areas[0];
@@ -237,22 +170,22 @@ namespace ImgParse {
 
         // 根据检测出的方向，生成映射回标准 266x266 的终极透视矩阵
         //
+        const float outSizeF = static_cast<float>(kOutputSize);
         vector<Point2f> finalDst266;
-        if (smallQrIdx == 0)      finalDst266 = { Point2f(266.0f,266.0f), Point2f(0.0f,266.0f), Point2f(0.0f,0.0f), Point2f(266.0f,0.0f) };
-        else if (smallQrIdx == 1) finalDst266 = { Point2f(266.0f,0.0f), Point2f(266.0f,266.0f), Point2f(0.0f,266.0f), Point2f(0.0f,0.0f) };
-        else if (smallQrIdx == 3) finalDst266 = { Point2f(0.0f,266.0f), Point2f(0.0f,0.0f), Point2f(266.0f,0.0f), Point2f(266.0f,266.0f) };
-        else                      finalDst266 = { Point2f(0.0f,0.0f), Point2f(266.0f,0.0f), Point2f(266.0f,266.0f), Point2f(0.0f,266.0f) };
+        if (smallQrIdx == 0)      finalDst266 = { Point2f(outSizeF,outSizeF), Point2f(0.0f,outSizeF), Point2f(0.0f,0.0f), Point2f(outSizeF,0.0f) };
+        else if (smallQrIdx == 1) finalDst266 = { Point2f(outSizeF,0.0f), Point2f(outSizeF,outSizeF), Point2f(0.0f,outSizeF), Point2f(0.0f,0.0f) };
+        else if (smallQrIdx == 3) finalDst266 = { Point2f(0.0f,outSizeF), Point2f(0.0f,0.0f), Point2f(outSizeF,0.0f), Point2f(outSizeF,outSizeF) };
+        else                      finalDst266 = { Point2f(0.0f,0.0f), Point2f(outSizeF,0.0f), Point2f(outSizeF,outSizeF), Point2f(0.0f,outSizeF) };
 
         lastValidTransform = getPerspectiveTransform(srcPointsOuter, finalDst266);
 
         // 完美契合原代码：抛弃抽样，从原灰度图直接裁剪 266 享受平滑抗锯齿
         //
         Mat grayWarped;
-        warpPerspective(gray, grayWarped, lastValidTransform, Size(266, 266), INTER_LINEAR);
+        warpPerspective(gray, grayWarped, lastValidTransform, Size(kOutputSize, kOutputSize), INTER_LINEAR);
 
         Mat binWarped;
         threshold(grayWarped, binWarped, 0, 255, THRESH_BINARY | THRESH_OTSU);
-        normalizeBinaryPolarity(binWarped);
 
         cvtColor(binWarped, disImg, COLOR_GRAY2BGR);
         return true;
@@ -416,11 +349,12 @@ namespace ImgParse {
         if (!foundBR) BR = expectedBR;
 
         vector<Point2f> srcPoints = { TL, TR, BR, BL };
+        const float baseScale = static_cast<float>(kScaleFactor);
         vector<Point2f> dstPoints = {
-            Point2f(21.0f, 21.0f),
-            Point2f(245.0f, 21.0f),
-            foundBR ? Point2f(252.0f, 252.0f) : Point2f(245.0f, 245.0f),
-            Point2f(21.0f, 245.0f)
+            Point2f(10.0f * baseScale, 10.0f * baseScale),
+            Point2f(122.0f * baseScale, 10.0f * baseScale),
+            foundBR ? Point2f(126.0f * baseScale, 126.0f * baseScale) : Point2f(122.0f * baseScale, 122.0f * baseScale),
+            Point2f(10.0f * baseScale, 122.0f * baseScale)
         };
 
         Mat transformMatrix = getPerspectiveTransform(srcPoints, dstPoints);
@@ -432,11 +366,10 @@ namespace ImgParse {
         // 回归高保真！直接使用原生最高分辨率灰度图裁切，抗锯齿满分
         //
         Mat grayWarped;
-        warpPerspective(gray, grayWarped, transformMatrix, Size(266, 266), INTER_LINEAR);
+        warpPerspective(gray, grayWarped, transformMatrix, Size(kOutputSize, kOutputSize), INTER_LINEAR);
 
         Mat binWarped;
         threshold(grayWarped, binWarped, 0, 255, THRESH_BINARY | THRESH_OTSU);
-        normalizeBinaryPolarity(binWarped);
 
         cvtColor(binWarped, disImg, COLOR_GRAY2BGR);
         return true;
@@ -459,40 +392,32 @@ namespace ImgParse {
         // 拦截无形变的原始纯净视频导出帧
         //
         double aspect = (double)srcImg.cols / srcImg.rows;
-        if (aspect > 0.95 && aspect < 1.05 && srcImg.cols > 532) {
+        if (aspect > kAspectMin && aspect < kAspectMax && srcImg.cols > kOutputSize * kScaleFactor) {
             Mat grayForDigital;
             if (srcImg.channels() == 3) cvtColor(srcImg, grayForDigital, COLOR_BGR2GRAY);
             else grayForDigital = srcImg.clone();
 
+            disImg.create(kOutputSize, kOutputSize, CV_8UC3);
             Mat binRaw;
             threshold(grayForDigital, binRaw, 0, 255, THRESH_BINARY | THRESH_OTSU);
 
-            float stepX = (float)srcImg.cols / 266.0f;
-            float stepY = (float)srcImg.rows / 266.0f;
-            if (std::abs(stepX - stepY) < 0.10f &&
-                isNearlyInteger(stepX) &&
-                isNearlyInteger(stepY) &&
-                hasLikelyWhiteBorder(binRaw, std::max(1, std::min(srcImg.cols, srcImg.rows) / 200))) {
-                Mat sampled266(266, 266, CV_8UC1);
-                for (int r = 0; r < 266; ++r) {
-                    for (int c = 0; c < 266; ++c) {
-                        int px = std::min(static_cast<int>((c + 0.5f) * stepX), srcImg.cols - 1);
-                        int py = std::min(static_cast<int>((r + 0.5f) * stepY), srcImg.rows - 1);
-                        sampled266.at<uint8_t>(r, c) = binRaw.at<uint8_t>(py, px);
-                    }
-                }
+            float stepX = (float)srcImg.cols / static_cast<float>(kOutputSize);
+            float stepY = (float)srcImg.rows / static_cast<float>(kOutputSize);
 
-                if (validateFinderPattern266(sampled266)) {
-                    normalizeBinaryPolarity(sampled266);
-                    cvtColor(sampled266, disImg, COLOR_GRAY2BGR);
-                    return true;
+            for (int r = 0; r < kOutputSize; ++r) {
+                for (int c = 0; c < kOutputSize; ++c) {
+                    int px = std::min(static_cast<int>((c + 0.5f) * stepX), srcImg.cols - 1);
+                    int py = std::min(static_cast<int>((r + 0.5f) * stepY), srcImg.rows - 1);
+                    uint8_t val = binRaw.at<uint8_t>(py, px);
+                    disImg.at<Vec3b>(r, c) = val ? Vec3b(255, 255, 255) : Vec3b(0, 0, 0);
                 }
             }
+            return true;
         }
 
         // 处理前 3 帧：最容易因为曝光撕裂产生激光，用 V5 暴力外框兜底
         //
-        if (v5_frame_count < 3) {
+        if (v5_frame_count < kV5Frames) {
             v5_frame_count++;
             if (processV5(srcImg, disImg)) {
                 return true;
@@ -525,11 +450,10 @@ namespace ImgParse {
         if (!lastValidTransform.empty()) {
             Mat grayWarped;
 
-            warpPerspective(grayNormal, grayWarped, lastValidTransform, Size(266, 266), INTER_LINEAR);
+            warpPerspective(grayNormal, grayWarped, lastValidTransform, Size(kOutputSize, kOutputSize), INTER_LINEAR);
 
             Mat binWarped;
             threshold(grayWarped, binWarped, 0, 255, THRESH_BINARY | THRESH_OTSU);
-            normalizeBinaryPolarity(binWarped);
 
             cvtColor(binWarped, disImg, COLOR_GRAY2BGR);
             return true;
