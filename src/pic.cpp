@@ -19,83 +19,33 @@ namespace ImgParse {
         double area;
     };
 
-    bool isBlack(const Vec3b& p) {
-        return static_cast<int>(p[0]) + static_cast<int>(p[1]) + static_cast<int>(p[2]) < 384;
-    }
+    void normalizeBinaryPolarity(Mat& binWarped) {
+        if (binWarped.rows != 266 || binWarped.cols != 266 || binWarped.type() != CV_8UC1) return;
 
-    bool validateAlignedGrid(const Mat& img266) {
-        if (img266.rows != 266 || img266.cols != 266 || img266.type() != CV_8UC3) return false;
-
-        struct SamplePoint {
-            int r;
-            int c;
+        struct ProbePoint {
+            int row;
+            int col;
             bool expectBlack;
         };
 
-        const std::array<std::array<int, 2>, 3> bigOrigins = { {
-            {0, 0}, {0, 224}, {224, 0}
-        } };
-        const std::array<SamplePoint, 4> bigSamples = { {
-            {21, 21, true},
-            {21, 30, false},
-            {21, 34, true},
-            {21, 39, false}
+        const std::array<ProbePoint, 16> probes = { {
+            {21, 21, true}, {21, 30, false}, {21, 34, true}, {21, 39, false},
+            {21, 245, true}, {21, 236, false}, {21, 232, true}, {21, 227, false},
+            {245, 21, true}, {236, 21, false}, {232, 21, true}, {227, 21, false},
+            {252, 252, true}, {249, 249, false}, {247, 247, true}, {258, 258, true}
         } };
 
-        int mismatch = 0;
-        for (const auto& origin : bigOrigins) {
-            for (const auto& sp : bigSamples) {
-                const int rr = origin[0] + sp.r;
-                const int cc = origin[1] + sp.c;
-                const bool black = isBlack(img266.at<Vec3b>(rr, cc));
-                if (black != sp.expectBlack) ++mismatch;
-            }
+        int directMatch = 0;
+        int invertedMatch = 0;
+        for (const auto& p : probes) {
+            const bool black = binWarped.at<uint8_t>(p.row, p.col) < 128;
+            if (black == p.expectBlack) directMatch++;
+            if ((!black) == p.expectBlack) invertedMatch++;
         }
 
-        const int smallOrigin = 246;
-        const std::array<SamplePoint, 4> smallSamples = { {
-            {7, 7, true},
-            {3, 3, false},
-            {1, 1, true},
-            {12, 12, true}
-        } };
-        for (const auto& sp : smallSamples) {
-            const int rr = smallOrigin + sp.r;
-            const int cc = smallOrigin + sp.c;
-            const bool black = isBlack(img266.at<Vec3b>(rr, cc));
-            if (black != sp.expectBlack) ++mismatch;
+        if (invertedMatch > directMatch) {
+            bitwise_not(binWarped, binWarped);
         }
-
-        return mismatch <= 2;
-    }
-
-    bool shouldUseDirectSampling(const Mat& gray) {
-        const int w = gray.cols;
-        const int h = gray.rows;
-        if (w <= 532 || h <= 532) return false;
-        const double aspect = static_cast<double>(w) / h;
-        if (aspect < 0.98 || aspect > 1.02) return false;
-
-        const double scale = static_cast<double>(w) / 266.0;
-        const double nearestScale = std::round(scale);
-        if (nearestScale < 2.0 || std::abs(scale - nearestScale) > 0.05) return false;
-
-        Mat bin;
-        threshold(gray, bin, 0, 255, THRESH_BINARY | THRESH_OTSU);
-
-        const int border = std::max(2, static_cast<int>(std::round(nearestScale * 3.5)));
-        const Rect top(0, 0, w, border);
-        const Rect bottom(0, h - border, w, border);
-        const Rect left(0, 0, border, h);
-        const Rect right(w - border, 0, border, h);
-        auto whiteRatio = [&](const Rect& r) {
-            return static_cast<double>(countNonZero(bin(r))) / static_cast<double>(r.area());
-        };
-
-        return whiteRatio(top) > 0.98 &&
-            whiteRatio(bottom) > 0.98 &&
-            whiteRatio(left) > 0.98 &&
-            whiteRatio(right) > 0.98;
     }
 
     // 统计局部区域黑色像素的面积，用于 V5 兜底判断方向
@@ -208,13 +158,13 @@ namespace ImgParse {
         // 方向探测器：拉平到 532x532 (266的2倍)，彻底放大定位块差异
         //
         vector<Point2f> dstPointsOuter = {
-            Point2f(0.0f, 0.0f), Point2f(531.0f, 0.0f),
-            Point2f(531.0f, 531.0f), Point2f(0.0f, 531.0f)
+            Point2f(0.0f, 0.0f), Point2f(532.0f, 0.0f),
+            Point2f(532.0f, 532.0f), Point2f(0.0f, 532.0f)
         };
 
         Mat M_Outer = getPerspectiveTransform(srcPointsOuter, dstPointsOuter);
         Mat warped532;
-        warpPerspective(gray, warped532, M_Outer, Size(532, 532), INTER_NEAREST);
+        warpPerspective(gray, warped532, M_Outer, Size(532, 532), INTER_LINEAR);
 
         // 探测图二值化
         //
@@ -244,20 +194,21 @@ namespace ImgParse {
         // 根据检测出的方向，生成映射回标准 266x266 的终极透视矩阵
         //
         vector<Point2f> finalDst266;
-        if (smallQrIdx == 0)      finalDst266 = { Point2f(265.0f,265.0f), Point2f(0.0f,265.0f), Point2f(0.0f,0.0f), Point2f(265.0f,0.0f) };
-        else if (smallQrIdx == 1) finalDst266 = { Point2f(265.0f,0.0f), Point2f(265.0f,265.0f), Point2f(0.0f,265.0f), Point2f(0.0f,0.0f) };
-        else if (smallQrIdx == 3) finalDst266 = { Point2f(0.0f,265.0f), Point2f(0.0f,0.0f), Point2f(265.0f,0.0f), Point2f(265.0f,265.0f) };
-        else                      finalDst266 = { Point2f(0.0f,0.0f), Point2f(265.0f,0.0f), Point2f(265.0f,265.0f), Point2f(0.0f,265.0f) };
+        if (smallQrIdx == 0)      finalDst266 = { Point2f(266.0f,266.0f), Point2f(0.0f,266.0f), Point2f(0.0f,0.0f), Point2f(266.0f,0.0f) };
+        else if (smallQrIdx == 1) finalDst266 = { Point2f(266.0f,0.0f), Point2f(266.0f,266.0f), Point2f(0.0f,266.0f), Point2f(0.0f,0.0f) };
+        else if (smallQrIdx == 3) finalDst266 = { Point2f(0.0f,266.0f), Point2f(0.0f,0.0f), Point2f(266.0f,0.0f), Point2f(266.0f,266.0f) };
+        else                      finalDst266 = { Point2f(0.0f,0.0f), Point2f(266.0f,0.0f), Point2f(266.0f,266.0f), Point2f(0.0f,266.0f) };
 
         lastValidTransform = getPerspectiveTransform(srcPointsOuter, finalDst266);
 
         // 完美契合原代码：抛弃抽样，从原灰度图直接裁剪 266 享受平滑抗锯齿
         //
         Mat grayWarped;
-        warpPerspective(gray, grayWarped, lastValidTransform, Size(266, 266), INTER_NEAREST);
+        warpPerspective(gray, grayWarped, lastValidTransform, Size(266, 266), INTER_LINEAR);
 
         Mat binWarped;
         threshold(grayWarped, binWarped, 0, 255, THRESH_BINARY | THRESH_OTSU);
+        normalizeBinaryPolarity(binWarped);
 
         cvtColor(binWarped, disImg, COLOR_GRAY2BGR);
         return true;
@@ -424,7 +375,7 @@ namespace ImgParse {
         vector<Point2f> dstPoints = {
             Point2f(21.0f, 21.0f),
             Point2f(245.0f, 21.0f),
-            foundBR ? Point2f(253.0f, 253.0f) : Point2f(245.0f, 245.0f),
+            foundBR ? Point2f(252.0f, 252.0f) : Point2f(245.0f, 245.0f),
             Point2f(21.0f, 245.0f)
         };
 
@@ -437,10 +388,11 @@ namespace ImgParse {
         // 回归高保真！直接使用原生最高分辨率灰度图裁切，抗锯齿满分
         //
         Mat grayWarped;
-        warpPerspective(gray, grayWarped, transformMatrix, Size(266, 266), INTER_NEAREST);
+        warpPerspective(gray, grayWarped, transformMatrix, Size(266, 266), INTER_LINEAR);
 
         Mat binWarped;
         threshold(grayWarped, binWarped, 0, 255, THRESH_BINARY | THRESH_OTSU);
+        normalizeBinaryPolarity(binWarped);
 
         cvtColor(binWarped, disImg, COLOR_GRAY2BGR);
         return true;
@@ -462,11 +414,11 @@ namespace ImgParse {
 
         // 拦截无形变的原始纯净视频导出帧
         //
-        Mat grayForDigital;
-        if (srcImg.channels() == 3) cvtColor(srcImg, grayForDigital, COLOR_BGR2GRAY);
-        else grayForDigital = srcImg.clone();
-
-        if (shouldUseDirectSampling(grayForDigital)) {
+        double aspect = (double)srcImg.cols / srcImg.rows;
+        if (aspect > 0.95 && aspect < 1.05 && srcImg.cols > 532) {
+            Mat grayForDigital;
+            if (srcImg.channels() == 3) cvtColor(srcImg, grayForDigital, COLOR_BGR2GRAY);
+            else grayForDigital = srcImg.clone();
 
             disImg.create(266, 266, CV_8UC3);
             Mat binRaw;
@@ -483,9 +435,7 @@ namespace ImgParse {
                     disImg.at<Vec3b>(r, c) = val ? Vec3b(255, 255, 255) : Vec3b(0, 0, 0);
                 }
             }
-            if (validateAlignedGrid(disImg)) {
-                return true;
-            }
+            return true;
         }
 
         // 处理前 3 帧：最容易因为曝光撕裂产生激光，用 V5 暴力外框兜底
@@ -523,10 +473,11 @@ namespace ImgParse {
         if (!lastValidTransform.empty()) {
             Mat grayWarped;
 
-            warpPerspective(grayNormal, grayWarped, lastValidTransform, Size(266, 266), INTER_NEAREST);
+            warpPerspective(grayNormal, grayWarped, lastValidTransform, Size(266, 266), INTER_LINEAR);
 
             Mat binWarped;
             threshold(grayWarped, binWarped, 0, 255, THRESH_BINARY | THRESH_OTSU);
+            normalizeBinaryPolarity(binWarped);
 
             cvtColor(binWarped, disImg, COLOR_GRAY2BGR);
             return true;
