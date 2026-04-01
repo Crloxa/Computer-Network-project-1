@@ -40,7 +40,7 @@ namespace ImageDecode
 		Normal = 3
 	};
 
-	constexpr int SmallQrPointRadius = 6;
+	constexpr int SmallQrPointRadius = 3;
 	constexpr int CornerReserveSize = 42;
 	constexpr int HeaderLeft = 42;
 	constexpr int HeaderTop = 6;

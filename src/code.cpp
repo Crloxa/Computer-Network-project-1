@@ -29,7 +29,7 @@ namespace Code
 	constexpr int SafeAreaWidth = 4;
 	constexpr int QrPointSize = 42;
 	constexpr int SmallQrPointbias = 14;
-	constexpr int SmallQrPointRadius = 6;
+	constexpr int SmallQrPointRadius = 3;
 	constexpr int CornerReserveSize = 42;
 	constexpr int HeaderHeight = 3;
 	constexpr int HeaderWidth = 16;
@@ -356,10 +356,9 @@ namespace Code
 	void drawSmallQrPoint(Mat& mat)
 	{
 		const int center = FrameSize - SmallQrPointbias;
-		const Vec3b vec3bsmall[7] =
+		const Vec3b vec3bsmall[4] =
 		{
-			pixel[Black], pixel[Black], pixel[Black], pixel[Black],
-			pixel[White], pixel[White], pixel[Black],
+			pixel[Black], pixel[Black], pixel[White], pixel[Black],
 		};
 		for (int i = -SmallQrPointRadius; i <= SmallQrPointRadius; ++i)
 		{
