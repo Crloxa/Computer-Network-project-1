@@ -49,7 +49,7 @@ namespace ImgParse {
     // ==========================================
     //
     bool processV5(const Mat& srcImg, Mat& disImg) {
-        Mat gray, small_img;
+        Mat gray, small_img, blurred;
 
         // 色相分离掩膜操作，剔除背景干扰
         //
@@ -67,16 +67,17 @@ namespace ImgParse {
             gray = srcImg.clone();
         }
 
-        // V5 专用宏观轮廓缩放：缩小到 800，极大加快闭运算与轮廓查找速度
+        // V5 专用宏观轮廓缩放：缩放到长边 1600，兼顾细节与速度
         //
-        float scale = 800.0f / std::max(srcImg.cols, srcImg.rows);
+        float scale = 1600.0f / std::max(srcImg.cols, srcImg.rows);
         if (scale > 1.0f) scale = 1.0f;
         resize(gray, small_img, Size(), scale, scale, INTER_AREA);
 
         Mat binaryForOuter;
-        adaptiveThreshold(small_img, binaryForOuter, 255, ADAPTIVE_THRESH_GAUSSIAN_C, THRESH_BINARY, 101, 0);
+        GaussianBlur(small_img, blurred, Size(5, 5), 0);
+        adaptiveThreshold(blurred, binaryForOuter, 255, ADAPTIVE_THRESH_GAUSSIAN_C, THRESH_BINARY_INV, 31, 10);
 
-        Mat kernelOuter = getStructuringElement(MORPH_CROSS, Size(5, 5));
+        Mat kernelOuter = getStructuringElement(MORPH_CROSS, Size(2, 2));
         Mat closedForOuter;
         morphologyEx(binaryForOuter, closedForOuter, MORPH_CLOSE, kernelOuter);
 
@@ -334,13 +335,7 @@ namespace ImgParse {
             // 放大寻找右下角的宽容度
             //
             if (minDist < max(len1, len2) * 0.5) {
-                // code.cpp 中小定位块中心相对右下主定位中心偏移约 +7.5 格。
-                // 这里把检测到的小定位点反推回“主定位中心”坐标，避免其余三角被拉扯出锯齿。
-                // 目标坐标系中主定位中心跨度：TR.x(245) - TL.x(21) = 224
-                constexpr float kFinderCenterSpan = 224.0f;
-                constexpr float kSmallToMainCenterOffset = 7.5f;
-                const float backProjectRatio = kSmallToMainCenterOffset / kFinderCenterSpan;
-                BR = markers[bestIdx].center - v1 * backProjectRatio - v2 * backProjectRatio;
+                BR = markers[bestIdx].center;
                 foundBR = true;
             }
         }
@@ -350,7 +345,7 @@ namespace ImgParse {
         vector<Point2f> dstPoints = {
             Point2f(21.0f, 21.0f),
             Point2f(245.0f, 21.0f),
-            Point2f(245.0f, 245.0f),
+            foundBR ? Point2f(252.0f, 252.0f) : Point2f(245.0f, 245.0f),
             Point2f(21.0f, 245.0f)
         };
 
