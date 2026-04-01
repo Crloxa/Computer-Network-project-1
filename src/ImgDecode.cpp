@@ -156,18 +156,18 @@ namespace ImageDecode
 
 	FrameType parseFrameType(uint16_t headerValue, bool& isStart, bool& isEnd)
 	{
-		const uint16_t flagBits = headerValue & 0xF;
+		const uint16_t flagBits = headerValue & 0x7;
 		switch (flagBits)
 		{
-		case 0b0011:
+		case 0b001:
 			isStart = true;
 			isEnd = false;
 			return FrameType::Start;
-		case 0b1100:
+		case 0b010:
 			isStart = false;
 			isEnd = true;
 			return FrameType::End;
-		case 0b1111:
+		case 0b011:
 			isStart = true;
 			isEnd = true;
 			return FrameType::StartAndEnd;
@@ -213,7 +213,7 @@ namespace ImageDecode
 
 		const uint16_t headerValue = readHeaderField(mat, 0);
 		parseFrameType(headerValue, imageInfo.IsStart, imageInfo.IsEnd);
-		const int codeLen = headerValue >> 4;
+		const int codeLen = headerValue >> 3;
 		if (codeLen > BytesPerFrame)
 		{
 			return true;

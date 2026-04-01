@@ -459,23 +459,25 @@ namespace Code
 
 	void BulidFrameFlag(Mat& mat, FrameType frameType, int tailLen)
 	{
+		// Header layout: [len:13 bits | flags:3 bits]
+		// 13-bit len supports up to 8191 (BytesPerFrame=7613).
 		uint16_t headerValue = 0;
 		switch (frameType)
 		{
 		case FrameType::Start:
-			headerValue = 0b0011;
+			headerValue = 0b001;
 			break;
 		case FrameType::End:
-			headerValue = 0b1100;
+			headerValue = 0b010;
 			break;
 		case FrameType::StartAndEnd:
-			headerValue = 0b1111;
+			headerValue = 0b011;
 			break;
 		default:
 			headerValue = 0;
 			break;
 		}
-		headerValue |= static_cast<uint16_t>(tailLen) << 4;
+		headerValue |= static_cast<uint16_t>(tailLen) << 3;
 		writeHeaderField(mat, 0, headerValue);
 #ifdef Code_DEBUG
 		Show_Scale_Img(mat);
