@@ -344,7 +344,7 @@ namespace ImgParse {
         vector<Point2f> dstPoints = {
             Point2f(21.0f, 21.0f),
             Point2f(245.0f, 21.0f),
-            foundBR ? Point2f(252.0f, 252.0f) : Point2f(245.0f, 245.0f),
+            foundBR ? Point2f(253.0f, 253.0f) : Point2f(245.0f, 245.0f),
             Point2f(21.0f, 245.0f)
         };
 
