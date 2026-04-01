@@ -28,9 +28,8 @@ namespace Code
 	constexpr int FrameOutputSize = FrameSize * FrameOutputRate;
 	constexpr int SafeAreaWidth = 4;
 	constexpr int QrPointSize = 42;
-	constexpr int SmallQrPointbias = 14;
-	constexpr int SmallQrPointSize = 14;
-	constexpr int SmallQrPointOffset = 0; // 贴紧右下角，偏移量为 0
+	constexpr int SmallQrPointbias = 14;  // 安全区内定位中心距右下边缘距离（2× main）
+	constexpr int SmallQrPointRadius = 6; // 定位块半径（2× main 的 radius=3）
 	constexpr int CornerReserveSize = 42;
 	constexpr int HeaderHeight = 3;
 	constexpr int HeaderWidth = 16;
@@ -110,24 +109,13 @@ namespace Code
 		{"corner_data_v", 224, 224, 37, 18, Vec3b(0, 200, 255)},
 		{"corner_data_h", 224, 242, 18, 18, Vec3b(0, 200, 255)},
 		{"corner", FrameSize - CornerReserveSize, FrameSize - CornerReserveSize, CornerReserveSize, CornerReserveSize, Vec3b(255, 0, 255)},
-		{"small_qr", FrameSize - SmallQrPointOffset - SmallQrPointSize, FrameSize - SmallQrPointOffset - SmallQrPointSize, SmallQrPointSize, SmallQrPointSize, Vec3b(0, 128, 255)}
+		{"small_qr", FrameSize - SmallQrPointbias - SmallQrPointRadius, FrameSize - SmallQrPointbias - SmallQrPointRadius, SmallQrPointRadius * 2 + 1, SmallQrPointRadius * 2 + 1, Vec3b(0, 128, 255)}
 	}};
-
-	int smallQrStart()
-	{
-		return FrameSize - SmallQrPointOffset - SmallQrPointSize;
-	}
-
-	int smallQrEnd()
-	{
-		return smallQrStart() + SmallQrPointSize - 1;
-	}
 
 	bool isInsideSmallQrPoint(int row, int col)
 	{
-		const int start = smallQrStart();
-		const int end = smallQrEnd();
-		return row >= start && row <= end && col >= start && col <= end;
+		const int center = FrameSize - SmallQrPointbias;
+		return std::abs(row - center) <= SmallQrPointRadius && std::abs(col - center) <= SmallQrPointRadius;
 	}
 
 	bool isInsideCornerQuietZone(int row, int col)
@@ -137,9 +125,8 @@ namespace Code
 
 	bool isInsideCornerSafetyZone(int row, int col)
 	{
-		const int start = smallQrStart() - 2;
-		const int end = smallQrEnd() + 2;
-		return row >= start && row <= end && col >= start && col <= end;
+		const int center = FrameSize - SmallQrPointbias;
+		return std::abs(row - center) <= SmallQrPointRadius + 2 && std::abs(col - center) <= SmallQrPointRadius + 2;
 	}
 
 	void fillBinaryNoiseCell(Vec3b& cell)
@@ -368,25 +355,17 @@ namespace Code
 
 	void drawSmallQrPoint(Mat& mat)
 	{
-		const int start = smallQrStart();
-		const int end = smallQrEnd();
-		for (int row = start; row <= end; ++row)
+		const int center = FrameSize - SmallQrPointbias;
+		// 2× 缩放自 main 分支的 [B,B,W,B]，每环宽度翻倍：[B,B,B,B,W,W,B]
+		const Vec3b vec3bsmall[7] = {
+			pixel[Black], pixel[Black], pixel[Black], pixel[Black],
+			pixel[White], pixel[White], pixel[Black],
+		};
+		for (int i = -SmallQrPointRadius; i <= SmallQrPointRadius; ++i)
 		{
-			for (int col = start; col <= end; ++col)
+			for (int j = -SmallQrPointRadius; j <= SmallQrPointRadius; ++j)
 			{
-				const int distToEdge = std::min(std::min(row - start, end - row), std::min(col - start, end - col));
-				if (distToEdge < 2)
-				{
-					mat.at<Vec3b>(row, col) = pixel[Black];
-				}
-				else if (distToEdge < 4)
-				{
-					mat.at<Vec3b>(row, col) = pixel[White];
-				}
-				else
-				{
-					mat.at<Vec3b>(row, col) = pixel[Black];
-				}
+				mat.at<Vec3b>(center + i, center + j) = vec3bsmall[std::max(std::abs(i), std::abs(j))];
 			}
 		}
 	}
