@@ -40,7 +40,8 @@ namespace ImageDecode
 		Normal = 3
 	};
 
-	constexpr int SmallQrPointRadius = 3;
+	constexpr int SmallQrPointSize = 14;
+	constexpr int SmallQrPointOffset = 6;
 	constexpr int CornerReserveSize = 42;
 	constexpr int HeaderLeft = 42;
 	constexpr int HeaderTop = 6;
@@ -60,6 +61,16 @@ namespace ImageDecode
 		{224, 42, 37, 182, 0}
 	}};
 
+	int smallQrStart()
+	{
+		return FrameSize - SmallQrPointOffset - SmallQrPointSize;
+	}
+
+	int smallQrEnd()
+	{
+		return smallQrStart() + SmallQrPointSize - 1;
+	}
+
 	bool isWhiteCell(const Vec3b& cell)
 	{
 		return cell[0] + cell[1] + cell[2] >= 384;
@@ -72,8 +83,9 @@ namespace ImageDecode
 
 	bool isInsideCornerSafetyZone(int row, int col)
 	{
-		const int center = FrameSize - SmallQrPointbias;
-		return std::abs(row - center) <= SmallQrPointRadius + 2 && std::abs(col - center) <= SmallQrPointRadius + 2;
+		const int start = smallQrStart() - 2;
+		const int end = smallQrEnd() + 2;
+		return row >= start && row <= end && col >= start && col <= end;
 	}
 
 	std::vector<CellPos> buildAreaCells(const DataArea& area)
