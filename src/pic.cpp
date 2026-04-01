@@ -19,8 +19,35 @@ namespace ImgParse {
         double area;
     };
 
-    void normalizeBinaryPolarity(Mat& binWarped) {
-        if (binWarped.rows != 266 || binWarped.cols != 266 || binWarped.type() != CV_8UC1) return;
+    bool isNearlyInteger(double value, double tolerance = 0.08) {
+        return std::abs(value - std::round(value)) <= tolerance;
+    }
+
+    bool hasLikelyWhiteBorder(const Mat& binImg, int borderPx) {
+        if (binImg.empty() || binImg.type() != CV_8UC1) return false;
+        borderPx = std::max(1, borderPx);
+        if (binImg.rows <= borderPx * 2 || binImg.cols <= borderPx * 2) return false;
+
+        const Rect top(0, 0, binImg.cols, borderPx);
+        const Rect bottom(0, binImg.rows - borderPx, binImg.cols, borderPx);
+        const Rect left(0, borderPx, borderPx, binImg.rows - borderPx * 2);
+        const Rect right(binImg.cols - borderPx, borderPx, borderPx, binImg.rows - borderPx * 2);
+
+        const Mat topBand = binImg(top);
+        const Mat bottomBand = binImg(bottom);
+        const Mat leftBand = binImg(left);
+        const Mat rightBand = binImg(right);
+
+        const int whitePixels =
+            countNonZero(topBand) + countNonZero(bottomBand) + countNonZero(leftBand) + countNonZero(rightBand);
+        const int totalPixels = top.area() + bottom.area() + left.area() + right.area();
+        if (totalPixels <= 0) return false;
+        const double whiteRatio = static_cast<double>(whitePixels) / static_cast<double>(totalPixels);
+        return whiteRatio > 0.90;
+    }
+
+    int countFinderProbeMatches(const Mat& binWarped, bool invert) {
+        if (binWarped.rows != 266 || binWarped.cols != 266 || binWarped.type() != CV_8UC1) return 0;
 
         struct ProbePoint {
             int row;
@@ -35,13 +62,27 @@ namespace ImgParse {
             {252, 252, true}, {249, 249, false}, {247, 247, true}, {258, 258, true}
         } };
 
-        int directMatch = 0;
-        int invertedMatch = 0;
+        int match = 0;
         for (const auto& p : probes) {
             const bool black = binWarped.at<uint8_t>(p.row, p.col) < 128;
-            if (black == p.expectBlack) directMatch++;
-            if ((!black) == p.expectBlack) invertedMatch++;
+            const bool testBlack = invert ? !black : black;
+            if (testBlack == p.expectBlack) {
+                ++match;
+            }
         }
+        return match;
+    }
+
+    bool validateFinderPattern266(const Mat& binWarped) {
+        const int direct = countFinderProbeMatches(binWarped, false);
+        const int inverted = countFinderProbeMatches(binWarped, true);
+        return std::max(direct, inverted) >= 13;
+    }
+
+    void normalizeBinaryPolarity(Mat& binWarped) {
+        if (binWarped.rows != 266 || binWarped.cols != 266 || binWarped.type() != CV_8UC1) return;
+        const int directMatch = countFinderProbeMatches(binWarped, false);
+        const int invertedMatch = countFinderProbeMatches(binWarped, true);
 
         if (invertedMatch > directMatch) {
             bitwise_not(binWarped, binWarped);
@@ -420,22 +461,30 @@ namespace ImgParse {
             if (srcImg.channels() == 3) cvtColor(srcImg, grayForDigital, COLOR_BGR2GRAY);
             else grayForDigital = srcImg.clone();
 
-            disImg.create(266, 266, CV_8UC3);
             Mat binRaw;
             threshold(grayForDigital, binRaw, 0, 255, THRESH_BINARY | THRESH_OTSU);
 
             float stepX = (float)srcImg.cols / 266.0f;
             float stepY = (float)srcImg.rows / 266.0f;
+            if (std::abs(stepX - stepY) < 0.10f &&
+                isNearlyInteger(stepX) &&
+                isNearlyInteger(stepY) &&
+                hasLikelyWhiteBorder(binRaw, std::max(1, std::min(srcImg.cols, srcImg.rows) / 200))) {
+                Mat sampled266(266, 266, CV_8UC1);
+                for (int r = 0; r < 266; ++r) {
+                    for (int c = 0; c < 266; ++c) {
+                        int px = std::min(static_cast<int>((c + 0.5f) * stepX), srcImg.cols - 1);
+                        int py = std::min(static_cast<int>((r + 0.5f) * stepY), srcImg.rows - 1);
+                        sampled266.at<uint8_t>(r, c) = binRaw.at<uint8_t>(py, px);
+                    }
+                }
 
-            for (int r = 0; r < 266; ++r) {
-                for (int c = 0; c < 266; ++c) {
-                    int px = std::min(static_cast<int>((c + 0.5f) * stepX), srcImg.cols - 1);
-                    int py = std::min(static_cast<int>((r + 0.5f) * stepY), srcImg.rows - 1);
-                    uint8_t val = binRaw.at<uint8_t>(py, px);
-                    disImg.at<Vec3b>(r, c) = val ? Vec3b(255, 255, 255) : Vec3b(0, 0, 0);
+                if (validateFinderPattern266(sampled266)) {
+                    normalizeBinaryPolarity(sampled266);
+                    cvtColor(sampled266, disImg, COLOR_GRAY2BGR);
+                    return true;
                 }
             }
-            return true;
         }
 
         // 处理前 3 帧：最容易因为曝光撕裂产生激光，用 V5 暴力外框兜底
