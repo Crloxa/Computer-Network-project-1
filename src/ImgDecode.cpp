@@ -40,6 +40,14 @@ namespace ImageDecode
 		Normal = 3
 	};
 
+	struct HeaderInfo
+	{
+		int codeLen;
+		bool isStart;
+		bool isEnd;
+		bool valid;
+	};
+
 	constexpr int SmallQrPointSize = 14;
 	constexpr int SmallQrPointOffset = 6;
 	constexpr int CornerReserveSize = 42;
@@ -154,7 +162,7 @@ namespace ImageDecode
 		return value;
 	}
 
-	FrameType parseFrameType(uint16_t headerValue, bool& isStart, bool& isEnd)
+	FrameType parseFrameType3BitFlags(uint16_t headerValue, bool& isStart, bool& isEnd)
 	{
 		const uint16_t flagBits = headerValue & 0x7;
 		switch (flagBits)
@@ -176,6 +184,48 @@ namespace ImageDecode
 			isEnd = false;
 			return FrameType::Normal;
 		}
+	}
+
+	FrameType parseFrameTypeLegacy4BitFlags(uint16_t headerValue, bool& isStart, bool& isEnd)
+	{
+		const uint16_t flagBits = headerValue & 0xF;
+		switch (flagBits)
+		{
+		case 0b0011:
+			isStart = true;
+			isEnd = false;
+			return FrameType::Start;
+		case 0b1100:
+			isStart = false;
+			isEnd = true;
+			return FrameType::End;
+		case 0b1111:
+			isStart = true;
+			isEnd = true;
+			return FrameType::StartAndEnd;
+		default:
+			isStart = false;
+			isEnd = false;
+			return FrameType::Normal;
+		}
+	}
+
+	HeaderInfo parseHeader3BitFlags(uint16_t headerValue)
+	{
+		HeaderInfo info{};
+		parseFrameType3BitFlags(headerValue, info.isStart, info.isEnd);
+		info.codeLen = headerValue >> 3;
+		info.valid = info.codeLen >= 0 && info.codeLen <= BytesPerFrame;
+		return info;
+	}
+
+	HeaderInfo parseHeaderLegacy4BitFlags(uint16_t headerValue)
+	{
+		HeaderInfo info{};
+		parseFrameTypeLegacy4BitFlags(headerValue, info.isStart, info.isEnd);
+		info.codeLen = headerValue >> 4;
+		info.valid = info.codeLen >= 0 && info.codeLen <= BytesPerFrame;
+		return info;
 	}
 
 	void readPayload(const Mat& mat, std::vector<unsigned char>& info)
@@ -212,27 +262,52 @@ namespace ImageDecode
 		}
 
 		const uint16_t headerValue = readHeaderField(mat, 0);
-		parseFrameType(headerValue, imageInfo.IsStart, imageInfo.IsEnd);
-		const int codeLen = headerValue >> 3;
-		if (codeLen > BytesPerFrame)
-		{
-			return true;
-		}
-
 		imageInfo.CheckCode = readHeaderField(mat, 1);
 		imageInfo.FrameBase = readHeaderField(mat, 2);
 
 		std::vector<unsigned char> payload;
 		readPayload(mat, payload);
-		payload.resize(codeLen);
-		imageInfo.Info.swap(payload);
+		const HeaderInfo header3BitFlags = parseHeader3BitFlags(headerValue);
+		const HeaderInfo headerLegacy4BitFlags = parseHeaderLegacy4BitFlags(headerValue);
+		const HeaderInfo* selected = nullptr;
 
-		return imageInfo.CheckCode != Code::CalCheckCode(
-			imageInfo.Info.data(),
-			codeLen,
-			imageInfo.IsStart,
-			imageInfo.IsEnd,
-			imageInfo.FrameBase
-		);
+		if (header3BitFlags.valid)
+		{
+			const uint16_t check3BitFlags = Code::CalCheckCode(
+				payload.data(),
+				header3BitFlags.codeLen,
+				header3BitFlags.isStart,
+				header3BitFlags.isEnd,
+				imageInfo.FrameBase
+			);
+			if (check3BitFlags == imageInfo.CheckCode)
+			{
+				selected = &header3BitFlags;
+			}
+		}
+		if (selected == nullptr && headerLegacy4BitFlags.valid)
+		{
+			const uint16_t checkLegacy4BitFlags = Code::CalCheckCode(
+				payload.data(),
+				headerLegacy4BitFlags.codeLen,
+				headerLegacy4BitFlags.isStart,
+				headerLegacy4BitFlags.isEnd,
+				imageInfo.FrameBase
+			);
+			if (checkLegacy4BitFlags == imageInfo.CheckCode)
+			{
+				selected = &headerLegacy4BitFlags;
+			}
+		}
+		if (selected == nullptr)
+		{
+			return true;
+		}
+
+		imageInfo.IsStart = selected->isStart;
+		imageInfo.IsEnd = selected->isEnd;
+		payload.resize(selected->codeLen);
+		imageInfo.Info.swap(payload);
+		return false;
 	}
 }

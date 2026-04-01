@@ -459,8 +459,9 @@ namespace Code
 
 	void BulidFrameFlag(Mat& mat, FrameType frameType, int tailLen)
 	{
-		// Header layout: [len:13 bits | flags:3 bits]
-		// 13-bit len supports up to 8191 (BytesPerFrame=7613).
+		// Header layout in uint16_t:
+		// - bits [2:0]   : flags (3 bits)
+		// - bits [15:3]  : payload length (13 bits, up to 8191)
 		uint16_t headerValue = 0;
 		switch (frameType)
 		{
