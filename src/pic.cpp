@@ -334,7 +334,13 @@ namespace ImgParse {
             // 放大寻找右下角的宽容度
             //
             if (minDist < max(len1, len2) * 0.5) {
-                BR = markers[bestIdx].center;
+                // code.cpp 中小定位块中心相对右下主定位中心偏移约 +7.5 格。
+                // 这里把检测到的小定位点反推回“主定位中心”坐标，避免其余三角被拉扯出锯齿。
+                // 目标坐标系中主定位中心跨度：TR.x(245) - TL.x(21) = 224
+                constexpr float kFinderCenterSpan = 224.0f;
+                constexpr float kSmallToMainCenterOffset = 7.5f;
+                const float backProjectRatio = kSmallToMainCenterOffset / kFinderCenterSpan;
+                BR = markers[bestIdx].center - v1 * backProjectRatio - v2 * backProjectRatio;
                 foundBR = true;
             }
         }
@@ -344,7 +350,7 @@ namespace ImgParse {
         vector<Point2f> dstPoints = {
             Point2f(21.0f, 21.0f),
             Point2f(245.0f, 21.0f),
-            foundBR ? Point2f(253.0f, 253.0f) : Point2f(245.0f, 245.0f),
+            Point2f(245.0f, 245.0f),
             Point2f(21.0f, 245.0f)
         };
 
