@@ -64,6 +64,9 @@ namespace ImgParse {
 
         int match = 0;
         for (const auto& p : probes) {
+            if (p.row < 0 || p.row >= binWarped.rows || p.col < 0 || p.col >= binWarped.cols) {
+                continue;
+            }
             const bool black = binWarped.at<uint8_t>(p.row, p.col) < 128;
             const bool testBlack = invert ? !black : black;
             if (testBlack == p.expectBlack) {
