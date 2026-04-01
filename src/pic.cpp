@@ -342,10 +342,10 @@ namespace ImgParse {
 
         vector<Point2f> srcPoints = { TL, TR, BR, BL };
         vector<Point2f> dstPoints = {
-            Point2f(20.0f, 20.0f),
-            Point2f(244.0f, 20.0f),
-            foundBR ? Point2f(252.0f, 252.0f) : Point2f(244.0f, 244.0f),
-            Point2f(20.0f, 244.0f)
+            Point2f(21.0f, 21.0f),
+            Point2f(245.0f, 21.0f),
+            foundBR ? Point2f(252.0f, 252.0f) : Point2f(245.0f, 245.0f),
+            Point2f(21.0f, 245.0f)
         };
 
         Mat transformMatrix = getPerspectiveTransform(srcPoints, dstPoints);
