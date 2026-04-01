@@ -185,7 +185,7 @@ namespace ImgParse {
     }
 
     // ==========================================
-    // V15 护城河版：回归 V29 稳健性 + 1080p 安全提速
+    // V15 稳健版：保持定位块完整优先，不做 1080p 限幅缩放
     // ==========================================
     //
     bool processV15(const Mat& srcImg, Mat& gray, Mat& disImg, bool useHSV) {
@@ -201,16 +201,11 @@ namespace ImgParse {
             gray.setTo(255, binaryMask);
         }
 
-        // 【1080p 安全护城河】：限制最大尺寸为 1920
-        // 如果是 4K 会被极速压到 1080p，如果本身是 1080p 则 scale=1 完全无损！
-        // 杜绝了暴力压成更小导致的拓扑缝隙糊死问题
+        // 取消 1080p 限幅缩放，直接在原分辨率灰度图上做轮廓预处理，避免定位块撕裂
         //
-        float scale = 1920.0f / std::max(srcImg.cols, srcImg.rows);
-        if (scale > 1.0f) scale = 1.0f;
-        resize(gray, small_img, Size(), scale, scale, INTER_AREA);
+        float scale = 1.0f;
+        small_img = gray;
 
-        // 既然限制在 1080p，我们就可以安全沿用原作者精调的物理参数
-        //
         GaussianBlur(small_img, blurred, Size(5, 5), 0);
         adaptiveThreshold(blurred, binaryForContours, 255, ADAPTIVE_THRESH_GAUSSIAN_C, THRESH_BINARY_INV, 31, 10);
 
