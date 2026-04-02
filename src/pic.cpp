@@ -237,6 +237,7 @@ namespace ImgParse {
             // 面积门槛按当前处理分辨率动态设置，过滤掉二值化产生的散点伪轮廓
             //
             // 0.00002 = 0.002% 图像面积：抑制散点噪声，同时保留定位块候选轮廓
+            //
             double minContourArea = std::max(80.0, 0.00002 * static_cast<double>(small_img.cols) * small_img.rows);
             if (area0 < minContourArea) continue;
 
