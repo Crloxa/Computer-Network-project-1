@@ -24,7 +24,7 @@ namespace Code
 {
 	constexpr int BytesPerFrame = 7613;
 	constexpr int FrameSize = 266;
-	constexpr int FrameOutputRate = 10;
+	constexpr int FrameOutputRate = 4;
 	constexpr int FrameOutputSize = FrameSize * FrameOutputRate;
 	constexpr int SafeAreaWidth = 4;
 	constexpr int QrPointSize = 42;
