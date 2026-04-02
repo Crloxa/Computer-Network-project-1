@@ -9,9 +9,9 @@
 #include <filesystem>
 #include <vector>
 
-// 定义下面这个宏来开启编码端调试图显示。
+// Define this macro to enable encoder debug display.
 //#define Code_DEBUG
-// 定义下面这个宏来额外输出彩色分区边界预览图。
+// Define this macro to output colored layout preview.
 //#define Layout_DEBUG
 #define Show_Scale_Img(src) do\
 {\
@@ -22,7 +22,7 @@
 
 namespace Code
 {
-	constexpr int BytesPerFrame = 7613;
+	constexpr int BytesPerFrame = 7600;
 	constexpr int FrameSize = 266;
 	constexpr int FrameOutputRate = 4;
 	constexpr int FrameOutputSize = FrameSize * FrameOutputRate;
@@ -30,8 +30,8 @@ namespace Code
 	constexpr int QrPointSize = 42;
 	constexpr int SmallQrPointbias = 14;
 	constexpr int SmallQrPointRadius = 6;
-	constexpr int SmallQrPointStart = FrameSize - SmallQrPointbias - SmallQrPointRadius;     // 246
-	constexpr int SmallQrPointEnd = FrameSize - SmallQrPointbias + SmallQrPointRadius + 1;   // 259（严格 14x14）
+	constexpr int SmallQrPointStart = FrameSize - SmallQrPointbias - SmallQrPointRadius;
+	constexpr int SmallQrPointEnd = FrameSize - SmallQrPointbias + SmallQrPointRadius + 1;
 	constexpr int CornerReserveSize = 42;
 	constexpr int HeaderHeight = 3;
 	constexpr int HeaderWidth = 16;
@@ -44,7 +44,7 @@ namespace Code
 	constexpr int TopDataLeft = HeaderLeft + HeaderWidth;
 	constexpr int TopDataWidth = 166;
 	constexpr int DataAreaCount = 5;
-	constexpr int PaddingCellCount = 6;
+	constexpr int PaddingCellCount = 2;
 
 	struct DataArea
 	{
@@ -92,16 +92,16 @@ namespace Code
 	};
 
 	const std::array<DataArea, DataAreaCount> kDataAreas =
-	{{
+	{ {
 		{6, 58, 3, 166, 0},
 		{9, 42, 33, 182, 0},
 		{42, 5, 179, 256, 0},
 		{221, 5, 3, 256, 0},
 		{224, 42, 37, 182, 0}
-	}};
+	} };
 
 	const std::array<DebugRegion, 10> kDebugRegions =
-	{{
+	{ {
 		{"header", HeaderTop, HeaderLeft, HeaderHeight, HeaderWidth, Vec3b(0, 0, 255)},
 		{"data1", kDataAreas[0].top, kDataAreas[0].left, kDataAreas[0].height, kDataAreas[0].width, Vec3b(255, 0, 0)},
 		{"data1_lower", kDataAreas[1].top, kDataAreas[1].left, kDataAreas[1].height, kDataAreas[1].width, Vec3b(255, 0, 0)},
@@ -112,7 +112,7 @@ namespace Code
 		{"corner_data_h", 224, 242, 18, 18, Vec3b(0, 200, 255)},
 		{"corner", FrameSize - CornerReserveSize, FrameSize - CornerReserveSize, CornerReserveSize, CornerReserveSize, Vec3b(255, 0, 255)},
 		{"small_qr", SmallQrPointStart, SmallQrPointStart, SmallQrPointEnd - SmallQrPointStart + 1, SmallQrPointEnd - SmallQrPointStart + 1, Vec3b(0, 128, 255)}
-	}};
+	} };
 
 	bool isInsideSmallQrPoint(int row, int col)
 	{
@@ -127,7 +127,7 @@ namespace Code
 
 	bool isInsideCornerSafetyZone(int row, int col)
 	{
-		const int safetyStart = SmallQrPointStart - 4; // 严格对应 main 的 ±2 安全圈按 2× 放大
+		const int safetyStart = SmallQrPointStart - 4;
 		const int safetyEnd = SmallQrPointEnd + 4;
 		return row >= safetyStart && row <= safetyEnd && col >= safetyStart && col <= safetyEnd;
 	}
@@ -358,7 +358,7 @@ namespace Code
 
 	void drawSmallQrPoint(Mat& mat)
 	{
-		// 与 main 分支 7x7 小定位块完全同图案（[B,B,W,B]），逐像素 2× 放大为 14x14
+		// Same 7x7 small finder pattern as main branch ([B,B,W,B]), scaled 2x per pixel to 14x14.
 		const Vec3b mainPattern[4] =
 		{
 			pixel[Black],
@@ -385,11 +385,11 @@ namespace Code
 	void BulidQrPoint(Mat& mat)
 	{
 		const std::array<std::array<int, 2>, 3> pointPos =
-		{{
+		{ {
 			{0, 0},
 			{0, FrameSize - QrPointSize},
 			{FrameSize - QrPointSize, 0}
-		}};
+		} };
 		const Vec3b vec3bBig[22] =
 		{
 			pixel[Black], pixel[Black], pixel[Black], pixel[Black],
