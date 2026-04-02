@@ -8,8 +8,8 @@ namespace ImgParse {
     using namespace std;
     using namespace cv;
 
-    // 静态全局缓存：保存上一次成功解析的透视变换矩阵
-    // 用于应对单帧极度模糊或闪光时的时空追踪兜底
+    //中文
+    //静态全局缓存：保存上一次成功解析的透视变换矩阵
     //
     static Mat lastValidTransform;
 
@@ -18,16 +18,17 @@ namespace ImgParse {
         double area;
     };
 
-    // 统计局部区域黑色像素的面积，用于 V5 兜底判断方向
-    // 【核心修复】：传入的 corner 已经是全局二值化图像
-    // 绝不能再次使用 OTSU，否则会导致局部色彩判定反转。直接统计零像素即可！
+    //中文
+    //统计局部区域黑色像素的面积
     //
     int getBlackArea(const Mat& corner) {
-        return (corner.rows * corner.cols) - countNonZero(corner);
+        Mat binCorner;
+        threshold(corner, binCorner, 0, 255, THRESH_BINARY | THRESH_OTSU);
+        return (corner.rows * corner.cols) - countNonZero(binCorner);
     }
 
-    // V15 最稳健的三层嵌套轮廓寻找器
-    // 极度严苛的层级校验，杜绝几乎所有背景干扰
+    //中文
+    //V15 最稳健的三层嵌套轮廓寻找器
     //
     int findLargestChild(int parentIdx, const vector<vector<Point>>& contours, const vector<Vec4i>& hierarchy) {
         int max_idx = -1;
@@ -44,21 +45,43 @@ namespace ImgParse {
         return max_idx;
     }
 
-    // ==========================================
-    // V5 强化版：专治前 3 帧的录屏撕裂与极度模糊
-    // ==========================================
+    //中文
+    //使用RGB最大值阈值进行极限单点二值化
+    //max(R,G,B) > colorThreshold判为白，否则黑
+    //
+    void colorMaxThreshold(const Mat& imgColor, Mat& binImg, int colorThreshold) {
+        //中文
+        //输出为3通道黑白图
+        //
+        binImg.create(imgColor.rows, imgColor.cols, CV_8UC3);
+        for (int y = 0; y < imgColor.rows; ++y) {
+            for (int x = 0; x < imgColor.cols; ++x) {
+                //中文
+                //BGR顺序
+                //
+                Vec3b pix = imgColor.at<Vec3b>(y, x);
+                int mx = std::max(pix[0], std::max(pix[1], pix[2]));
+                if (mx >= colorThreshold) {
+                    binImg.at<Vec3b>(y, x) = Vec3b(255, 255, 255);
+                }
+                else {
+                    binImg.at<Vec3b>(y, x) = Vec3b(0, 0, 0);
+                }
+            }
+        }
+    }
+
+    //==========================================
+    //V5 强化版：专治前 3 帧模糊
+    //==========================================
     //
     bool processV5(const Mat& srcImg, Mat& disImg) {
-        Mat gray, small_img;
-
-        // 色相分离掩膜操作，剔除背景干扰
-        //
+        Mat gray;
         if (srcImg.channels() == 3) {
             Mat hsv, satMask;
             cvtColor(srcImg, hsv, COLOR_BGR2HSV);
             vector<Mat> hsv_ch;
             split(hsv, hsv_ch);
-
             threshold(hsv_ch[1], satMask, 100, 255, THRESH_BINARY);
             cvtColor(srcImg, gray, COLOR_BGR2GRAY);
             gray.setTo(0, satMask);
@@ -66,41 +89,30 @@ namespace ImgParse {
         else {
             gray = srcImg.clone();
         }
-
-        // V5 专用宏观轮廓缩放：缩小到 800，极大加快闭运算与轮廓查找速度
-        //
-        float scale = 800.0f / std::max(srcImg.cols, srcImg.rows);
-        if (scale > 1.0f) scale = 1.0f;
-        resize(gray, small_img, Size(), scale, scale, INTER_AREA);
-
+        int max_dim = std::max(srcImg.cols, srcImg.rows);
+        int block_size_v5 = std::max(101, (int)(max_dim * 101.0 / 800.0));
+        if (block_size_v5 % 2 == 0) block_size_v5++;
         Mat binaryForOuter;
-        adaptiveThreshold(small_img, binaryForOuter, 255, ADAPTIVE_THRESH_GAUSSIAN_C, THRESH_BINARY, 101, 0);
-
-        Mat kernelOuter = getStructuringElement(MORPH_CROSS, Size(5, 5));
+        adaptiveThreshold(gray, binaryForOuter, 255, ADAPTIVE_THRESH_GAUSSIAN_C, THRESH_BINARY, block_size_v5, 0);
+        int kernel_size = std::max(5, (int)(max_dim * 5.0 / 800.0));
+        Mat kernelOuter = getStructuringElement(MORPH_CROSS, Size(kernel_size, kernel_size));
         Mat closedForOuter;
         morphologyEx(binaryForOuter, closedForOuter, MORPH_CLOSE, kernelOuter);
-
         vector<vector<Point>> outerContours;
         findContours(closedForOuter, outerContours, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
         if (outerContours.empty()) return false;
-
         int max_idx = -1;
         double max_area = 0;
         for (size_t i = 0; i < outerContours.size(); i++) {
             double area = contourArea(outerContours[i]);
             if (area > max_area) { max_area = area; max_idx = i; }
         }
-        if (max_area < 2000) return false;
-
-        // 先取凸包抹平内凹噪点，确保百分百拟合出四边形
-        //
+        if (max_area < 2000.0 * (max_dim / 800.0) * (max_dim / 800.0)) return false;
         vector<Point> hull;
         convexHull(outerContours[max_idx], hull);
-
         vector<Point> approx;
         double epsilon = 0.05 * arcLength(hull, true);
         approxPolyDP(hull, approx, epsilon, true);
-
         if (approx.size() != 4) {
             RotatedRect minRect = minAreaRect(hull);
             Point2f rect_points[4];
@@ -108,110 +120,62 @@ namespace ImgParse {
             approx.clear();
             for (int j = 0; j < 4; j++) approx.push_back(rect_points[j]);
         }
-
-        // 坐标逆映射：除以 scale，将坐标还原到高清原图上！
-        //
         vector<Point2f> srcPointsOuter(4);
         for (int i = 0; i < 4; i++) {
-            srcPointsOuter[i] = Point2f(approx[i].x / scale, approx[i].y / scale);
+            srcPointsOuter[i] = Point2f(approx[i].x, approx[i].y);
         }
-
         Point2f centerOuter(0, 0);
         for (int i = 0; i < 4; i++) centerOuter += srcPointsOuter[i];
         centerOuter.x /= 4.0f;
         centerOuter.y /= 4.0f;
-
         std::sort(srcPointsOuter.begin(), srcPointsOuter.end(), [&centerOuter](const Point2f& a, const Point2f& b) {
             return atan2(a.y - centerOuter.y, a.x - centerOuter.x) < atan2(b.y - centerOuter.y, b.x - centerOuter.x);
             });
-
-        // 方向探测器：拉平到 532x532 (133的4倍)，彻底放大定位块差异
-        //
         vector<Point2f> dstPointsOuter = {
-            Point2f(0.0f, 0.0f), Point2f(532.0f, 0.0f),
-            Point2f(532.0f, 532.0f), Point2f(0.0f, 532.0f)
+            Point2f(0.0f, 0.0f), Point2f(266.0f, 0.0f),
+            Point2f(266.0f, 266.0f), Point2f(0.0f, 266.0f)
         };
-
         Mat M_Outer = getPerspectiveTransform(srcPointsOuter, dstPointsOuter);
-        Mat warped532;
-        warpPerspective(gray, warped532, M_Outer, Size(532, 532), INTER_LINEAR);
+        Mat warped266;
+        warpPerspective(srcImg, warped266, M_Outer, Size(266, 266), INTER_LINEAR);
 
-        // 探测图二值化
+        //中文
+        // 应用RGB最大值二值化，建议阈值180
         //
-        Mat binWarped532;
-        threshold(warped532, binWarped532, 0, 255, THRESH_BINARY | THRESH_OTSU);
-
-        int cornerSize = 88;
-        Rect tl(0, 0, cornerSize, cornerSize);
-        Rect tr(532 - cornerSize, 0, cornerSize, cornerSize);
-        Rect br(532 - cornerSize, 532 - cornerSize, cornerSize, cornerSize);
-        Rect bl(0, 532 - cornerSize, cornerSize, cornerSize);
-
-        int areas[4] = {
-            getBlackArea(binWarped532(tl)), getBlackArea(binWarped532(tr)),
-            getBlackArea(binWarped532(br)), getBlackArea(binWarped532(bl))
-        };
-
-        int minArea = areas[0];
-        int smallQrIdx = 0;
-        for (int i = 1; i < 4; ++i) {
-            if (areas[i] < minArea) {
-                minArea = areas[i];
-                smallQrIdx = i;
-            }
-        }
-
-        // 根据检测出的方向，生成映射回标准 133x133 的终极透视矩阵
-        //
-        vector<Point2f> finalDst133;
-        if (smallQrIdx == 0)      finalDst133 = { Point2f(133.0f,133.0f), Point2f(0.0f,133.0f), Point2f(0.0f,0.0f), Point2f(133.0f,0.0f) };
-        else if (smallQrIdx == 1) finalDst133 = { Point2f(133.0f,0.0f), Point2f(133.0f,133.0f), Point2f(0.0f,133.0f), Point2f(0.0f,0.0f) };
-        else if (smallQrIdx == 3) finalDst133 = { Point2f(0.0f,133.0f), Point2f(0.0f,0.0f), Point2f(133.0f,0.0f), Point2f(133.0f,133.0f) };
-        else                      finalDst133 = { Point2f(0.0f,0.0f), Point2f(133.0f,0.0f), Point2f(133.0f,133.0f), Point2f(0.0f,133.0f) };
-
-        lastValidTransform = getPerspectiveTransform(srcPointsOuter, finalDst133);
-
-        // 完美契合原代码：抛弃抽样，从原灰度图直接裁剪 133 享受平滑抗锯齿
-        //
-        Mat grayWarped;
-        warpPerspective(gray, grayWarped, lastValidTransform, Size(133, 133), INTER_LINEAR);
-
         Mat binWarped;
-        threshold(grayWarped, binWarped, 0, 255, THRESH_BINARY | THRESH_OTSU);
+        colorMaxThreshold(warped266, binWarped, 180);
 
-        cvtColor(binWarped, disImg, COLOR_GRAY2BGR);
+        disImg = binWarped.clone();
         return true;
     }
 
-    // ==========================================
-    // V15 护城河版：回归 V29 稳健性 + 1080p 安全提速
-    // ==========================================
+    //==========================================
+    //V15 原生精细解析（原汁原味回归版）
+    //==========================================
     //
     bool processV15(const Mat& srcImg, Mat& gray, Mat& disImg, bool useHSV) {
-        Mat small_img, blurred, binaryForContours;
+        Mat blurred, binaryForContours;
+        Mat gray_work = gray.clone();
 
         if (useHSV && srcImg.channels() == 3) {
             Mat hsv, binaryMask;
             cvtColor(srcImg, hsv, COLOR_BGR2HSV);
             vector<Mat> hsv_ch;
             split(hsv, hsv_ch);
-
             threshold(hsv_ch[1], binaryMask, 180, 255, THRESH_BINARY);
-            gray.setTo(255, binaryMask);
+            gray_work.setTo(255, binaryMask);
         }
 
-        // 【1080p 安全护城河】：限制最大尺寸为 1920
-        // 如果是 4K 会被极速压到 1080p，如果本身是 1080p 则 scale=1 完全无损！
-        // 杜绝了暴力压成更小导致的拓扑缝隙糊死问题
-        //
-        float scale = 1920.0f / std::max(srcImg.cols, srcImg.rows);
-        if (scale > 1.0f) scale = 1.0f;
-        resize(gray, small_img, Size(), scale, scale, INTER_AREA);
+        int max_dim = std::max(srcImg.cols, srcImg.rows);
 
-        // 既然限制在 1080p，我们就可以安全沿用原作者精调的物理参数
-        //
-        GaussianBlur(small_img, blurred, Size(5, 5), 0);
-        adaptiveThreshold(blurred, binaryForContours, 255, ADAPTIVE_THRESH_GAUSSIAN_C, THRESH_BINARY_INV, 31, 10);
+        int blur_size = std::max(5, (int)(max_dim * 7.0 / 1920.0));
+        if (blur_size % 2 == 0) blur_size++;
+        GaussianBlur(gray_work, blurred, Size(blur_size, blur_size), 0);
+
+        int block_size = std::max(31, (int)(max_dim * 31.0 / 1920.0));
+        if (block_size % 2 == 0) block_size++;
+
+        adaptiveThreshold(blurred, binaryForContours, 255, ADAPTIVE_THRESH_GAUSSIAN_C, THRESH_BINARY_INV, block_size, 10);
 
         Mat kernel = getStructuringElement(MORPH_CROSS, Size(2, 2));
         Mat closedBinary;
@@ -221,6 +185,7 @@ namespace ImgParse {
         vector<Vec4i> hierarchy;
         findContours(closedBinary, contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE);
 
+        double min_area = std::max(15.0, (double)max_dim * max_dim * 0.000004);
         vector<Marker> markers;
 
         for (size_t i = 0; i < contours.size(); ++i) {
@@ -233,33 +198,28 @@ namespace ImgParse {
             double area1 = contourArea(contours[c1]);
             double area2 = contourArea(contours[c2]);
 
-            // 面积门槛等比折算，放过小图情况
-            //
-            if (area0 < 15.0 * scale * scale) continue;
+            if (area0 < min_area) continue;
 
             double r01 = area0 / max(area1, 1.0);
             double r12 = area1 / max(area2, 1.0);
 
             if (r01 > 1.2 && r01 < 8.0 && r12 > 1.2 && r12 < 8.0) {
+                //中文
+                //使用最稳健的外围轮廓计算重心
+                //
                 Moments M = moments(contours[i]);
                 if (M.m00 != 0) {
-                    // 除以 scale 还原回原生分辨率物理坐标
-                    //
-                    markers.push_back({
-                        Point2f((M.m10 / M.m00) / scale, (M.m01 / M.m00) / scale),
-                        area0 / (scale * scale)
-                        });
+                    markers.push_back({ Point2f(M.m10 / M.m00, M.m01 / M.m00), area0 });
                 }
             }
         }
 
-        // 空间去重合并：既然坐标已还原，直接沿用原生代码的 15.0 距离阈值
-        //
+        double merge_dist = std::max(15.0, (double)max_dim * 0.0078);
         vector<Marker> uniqueMarkers;
         for (const auto& m : markers) {
             bool duplicate = false;
             for (auto& um : uniqueMarkers) {
-                if (norm(m.center - um.center) < 15.0) {
+                if (norm(m.center - um.center) < merge_dist) {
                     if (m.area > um.area) {
                         um.area = m.area;
                         um.center = m.center;
@@ -274,8 +234,6 @@ namespace ImgParse {
 
         if (markers.size() < 3) return false;
 
-        // 按面积降序锁定三大主定位块
-        //
         std::sort(markers.begin(), markers.end(), [](const Marker& a, const Marker& b) {
             return a.area > b.area;
             });
@@ -301,26 +259,17 @@ namespace ImgParse {
         double len1 = norm(v1);
         double len2 = norm(v2);
 
-        // 【核心修复】：回归 V29 的大容错范围
-        // 透视畸变时边长比例和角度变化剧烈，过于苛刻会导致零碎丢帧！
-        //
         double legRatio = len1 / max(len2, 1.0);
         if (legRatio < 0.4 || legRatio > 2.5) return false;
-
-        // 放宽至 0.75，允许 41° 到 139° 的严重透视倾斜
-        //
         double cosTheta = (v1.x * v2.x + v1.y * v2.y) / max(len1 * len2, 1.0);
         if (std::abs(cosTheta) > 0.75) return false;
-
         double cross = v1.x * v2.y - v1.y * v2.x;
         Point2f TR, BL;
         if (cross > 0) { TR = pt1; BL = pt2; }
         else { TR = pt2; BL = pt1; }
-
         Point2f BR;
         bool foundBR = false;
         Point2f expectedBR = TR + BL - TL;
-
         if (markers.size() > 3) {
             double minDist = 1e9;
             int bestIdx = -1;
@@ -331,125 +280,102 @@ namespace ImgParse {
                     bestIdx = i;
                 }
             }
-            // 放大寻找右下角的宽容度
-            //
-            if (minDist < max(len1, len2) * 0.5) {
+            if (minDist < max(len1, len2) * 0.4) {
                 BR = markers[bestIdx].center;
                 foundBR = true;
             }
         }
         if (!foundBR) BR = expectedBR;
-
         vector<Point2f> srcPoints = { TL, TR, BR, BL };
-        vector<Point2f> dstPoints = {
-            Point2f(10.0f, 10.0f),
-            Point2f(122.0f, 10.0f),
-            foundBR ? Point2f(126.0f, 126.0f) : Point2f(122.0f, 122.0f),
-            Point2f(10.0f, 122.0f)
+        //中文
+        //还是用无撕裂的终极坐标
+        //
+        vector<Point2f> dstPoints266 = {
+            Point2f(21.0f, 21.0f),
+            Point2f(245.0f, 21.0f),
+            foundBR ? Point2f(253.0f, 253.0f) : Point2f(245.0f, 245.0f),
+            Point2f(21.0f, 245.0f)
         };
-
-        Mat transformMatrix = getPerspectiveTransform(srcPoints, dstPoints);
-
-        // 更新全局缓存矩阵，供无特征遮挡时续命
-        //
-        lastValidTransform = transformMatrix.clone();
-
-        // 回归高保真！直接使用原生最高分辨率灰度图裁切，抗锯齿满分
-        //
-        Mat grayWarped;
-        warpPerspective(gray, grayWarped, transformMatrix, Size(133, 133), INTER_LINEAR);
+        Mat transformMatrix266 = getPerspectiveTransform(srcPoints, dstPoints266);
+        lastValidTransform = transformMatrix266.clone();
+        Mat imgWarped;
+        warpPerspective(srcImg, imgWarped, transformMatrix266, Size(266, 266), INTER_LINEAR);
 
         Mat binWarped;
-        threshold(grayWarped, binWarped, 0, 255, THRESH_BINARY | THRESH_OTSU);
+        //中文
+        //采用RGB三通道最大值的阈值方式，建议180；
+        //
+        colorMaxThreshold(imgWarped, binWarped, 180);
 
-        cvtColor(binWarped, disImg, COLOR_GRAY2BGR);
+        disImg = binWarped.clone();
         return true;
     }
 
     bool Main(const cv::Mat& srcImg, cv::Mat& disImg) {
         if (srcImg.empty()) return false;
-
         static int last_cols = 0;
         static int last_rows = 0;
         static int v5_frame_count = 0;
-
         if (srcImg.cols != last_cols || srcImg.rows != last_rows) {
             last_cols = srcImg.cols;
             last_rows = srcImg.rows;
             v5_frame_count = 0;
             lastValidTransform = Mat();
         }
-
-        // 拦截无形变的原始纯净视频导出帧
+        //中文
+        //拦截无变形的原始纯净导出帧
         //
         double aspect = (double)srcImg.cols / srcImg.rows;
-        if (aspect > 0.95 && aspect < 1.05 && srcImg.cols > 266) {
-            Mat grayForDigital;
-            if (srcImg.channels() == 3) cvtColor(srcImg, grayForDigital, COLOR_BGR2GRAY);
-            else grayForDigital = srcImg.clone();
-
-            disImg.create(133, 133, CV_8UC3);
+        if (aspect > 0.95 && aspect < 1.05 && srcImg.cols > 200) {
+            Mat imgGray;
+            if (srcImg.channels() == 3) cvtColor(srcImg, imgGray, COLOR_BGR2GRAY);
+            else imgGray = srcImg.clone();
             Mat binRaw;
-            threshold(grayForDigital, binRaw, 0, 255, THRESH_BINARY | THRESH_OTSU);
-
-            float stepX = (float)srcImg.cols / 133.0f;
-            float stepY = (float)srcImg.rows / 133.0f;
-
-            for (int r = 0; r < 133; ++r) {
-                for (int c = 0; c < 133; ++c) {
-                    int px = std::min(static_cast<int>((c + 0.5f) * stepX), srcImg.cols - 1);
-                    int py = std::min(static_cast<int>((r + 0.5f) * stepY), srcImg.rows - 1);
-                    uint8_t val = binRaw.at<uint8_t>(py, px);
+            threshold(imgGray, binRaw, 0, 255, THRESH_BINARY | THRESH_OTSU);
+            disImg.create(266, 266, CV_8UC3);
+            float stepX = (float)srcImg.cols / 266.0f;
+            float stepY = (float)srcImg.rows / 266.0f;
+            for (int r = 0; r < 266; ++r) {
+                for (int c = 0; c < 266; ++c) {
+                    int px_x = std::min(static_cast<int>((c + 0.5f) * stepX), srcImg.cols - 1);
+                    int py_y = std::min(static_cast<int>((r + 0.5f) * stepY), srcImg.rows - 1);
+                    uint8_t val = binRaw.at<uint8_t>(py_y, px_x);
                     disImg.at<Vec3b>(r, c) = val ? Vec3b(255, 255, 255) : Vec3b(0, 0, 0);
                 }
             }
             return true;
         }
-
-        // 处理前 3 帧：最容易因为曝光撕裂产生激光，用 V5 暴力外框兜底
-        //
         if (v5_frame_count < 3) {
             v5_frame_count++;
             if (processV5(srcImg, disImg)) {
                 return true;
             }
         }
-
         Mat grayNormal;
-        if (srcImg.channels() == 3) cvtColor(srcImg, grayNormal, COLOR_BGR2GRAY);
-        else grayNormal = srcImg.clone();
-
-        // 常规帧：使用 V15 稳健逻辑，拥有 1080p 护城河加持
-        //
+        if (srcImg.channels() == 3)
+            cvtColor(srcImg, grayNormal, COLOR_BGR2GRAY);
+        else
+            grayNormal = srcImg.clone();
         if (processV15(srcImg, grayNormal, disImg, false)) {
             return true;
         }
-
-        // 极端环境兜底：启动 HSV 色彩降维打击，过滤彩色背景和光斑后再重试 V15
-        //
         if (srcImg.channels() == 3) {
             Mat grayHSV = grayNormal.clone();
             if (processV15(srcImg, grayHSV, disImg, true)) {
                 return true;
             }
         }
-
-        // ==========================================
-        // 最终形态：时空一致性追踪兜底 (Temporal Tracking Fallback)
-        // ==========================================
+        //中文
+        //时空兜底追踪
         //
         if (!lastValidTransform.empty()) {
-            Mat grayWarped;
-
-            warpPerspective(grayNormal, grayWarped, lastValidTransform, Size(133, 133), INTER_LINEAR);
-
+            Mat imgWarped;
+            warpPerspective(srcImg, imgWarped, lastValidTransform, Size(266, 266), INTER_LINEAR);
             Mat binWarped;
-            threshold(grayWarped, binWarped, 0, 255, THRESH_BINARY | THRESH_OTSU);
-
-            cvtColor(binWarped, disImg, COLOR_GRAY2BGR);
+            colorMaxThreshold(imgWarped, binWarped, 180);
+            disImg = binWarped.clone();
             return true;
         }
-
         return false;
     }
 
