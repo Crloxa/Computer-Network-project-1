@@ -9,9 +9,9 @@
 #include <filesystem>
 #include <vector>
 
-// 定义下面这个宏来开启编码端调试图显示。
+// Define this macro to enable encoder debug display.
 //#define Code_DEBUG
-// 定义下面这个宏来额外输出彩色分区边界预览图。
+// Define this macro to output colored layout preview.
 //#define Layout_DEBUG
 #define Show_Scale_Img(src) do\
 {\
@@ -22,27 +22,29 @@
 
 namespace Code
 {
-	constexpr int BytesPerFrame = 1878;
-	constexpr int FrameSize = 133;
-	constexpr int FrameOutputRate = 10;
+	constexpr int BytesPerFrame = 7600;
+	constexpr int FrameSize = 266;
+	constexpr int FrameOutputRate = 4;
 	constexpr int FrameOutputSize = FrameSize * FrameOutputRate;
-	constexpr int SafeAreaWidth = 2;
-	constexpr int QrPointSize = 21;
-	constexpr int SmallQrPointbias = 7;
-	constexpr int SmallQrPointRadius = 3;
-	constexpr int CornerReserveSize = 21;
+	constexpr int SafeAreaWidth = 4;
+	constexpr int QrPointSize = 42;
+	constexpr int SmallQrPointbias = 14;
+	constexpr int SmallQrPointRadius = 6;
+	constexpr int SmallQrPointStart = FrameSize - SmallQrPointbias - SmallQrPointRadius;
+	constexpr int SmallQrPointEnd = FrameSize - SmallQrPointbias + SmallQrPointRadius + 1;
+	constexpr int CornerReserveSize = 42;
 	constexpr int HeaderHeight = 3;
 	constexpr int HeaderWidth = 16;
-	constexpr int HeaderLeft = 21;
-	constexpr int HeaderTop = 3;
+	constexpr int HeaderLeft = 42;
+	constexpr int HeaderTop = 6;
 	constexpr int HeaderFieldHeight = 1;
 	constexpr int HeaderFieldBits = 16;
 	constexpr int HeaderBitWidth = 1;
 	constexpr int HeaderInnerLeft = 0;
 	constexpr int TopDataLeft = HeaderLeft + HeaderWidth;
-	constexpr int TopDataWidth = 75;
+	constexpr int TopDataWidth = 166;
 	constexpr int DataAreaCount = 5;
-	constexpr int PaddingCellCount = 4;
+	constexpr int PaddingCellCount = 2;
 
 	struct DataArea
 	{
@@ -90,43 +92,44 @@ namespace Code
 	};
 
 	const std::array<DataArea, DataAreaCount> kDataAreas =
-	{{
-		{3, TopDataLeft, 3, TopDataWidth, 0},
-		{6, 21, 15, 91, 0},
-		{21, 3, 88, 127, 0},
-		{109, 3, 3, 127, 0},
-		{112, 21, 18, 91, 0}
-	}};
+	{ {
+		{6, 58, 3, 166, 0},
+		{9, 42, 33, 182, 0},
+		{42, 5, 179, 256, 0},
+		{221, 5, 3, 256, 0},
+		{224, 42, 37, 182, 0}
+	} };
 
 	const std::array<DebugRegion, 10> kDebugRegions =
-	{{
+	{ {
 		{"header", HeaderTop, HeaderLeft, HeaderHeight, HeaderWidth, Vec3b(0, 0, 255)},
 		{"data1", kDataAreas[0].top, kDataAreas[0].left, kDataAreas[0].height, kDataAreas[0].width, Vec3b(255, 0, 0)},
 		{"data1_lower", kDataAreas[1].top, kDataAreas[1].left, kDataAreas[1].height, kDataAreas[1].width, Vec3b(255, 0, 0)},
 		{"data2", kDataAreas[2].top, kDataAreas[2].left, kDataAreas[2].height, kDataAreas[2].width, Vec3b(0, 255, 0)},
 		{"data4", kDataAreas[3].top, kDataAreas[3].left, kDataAreas[3].height, kDataAreas[3].width, Vec3b(0, 255, 255)},
 		{"data3", kDataAreas[4].top, kDataAreas[4].left, kDataAreas[4].height, kDataAreas[4].width, Vec3b(255, 255, 0)},
-		{"corner_data_v", 112, 112, 18, 9, Vec3b(0, 200, 255)},
-		{"corner_data_h", 112, 121, 9, 9, Vec3b(0, 200, 255)},
+		{"corner_data_v", 224, 224, 37, 18, Vec3b(0, 200, 255)},
+		{"corner_data_h", 224, 242, 18, 18, Vec3b(0, 200, 255)},
 		{"corner", FrameSize - CornerReserveSize, FrameSize - CornerReserveSize, CornerReserveSize, CornerReserveSize, Vec3b(255, 0, 255)},
-		{"small_qr", FrameSize - SmallQrPointbias - SmallQrPointRadius, FrameSize - SmallQrPointbias - SmallQrPointRadius, SmallQrPointRadius * 2 + 1, SmallQrPointRadius * 2 + 1, Vec3b(0, 128, 255)}
-	}};
+		{"small_qr", SmallQrPointStart, SmallQrPointStart, SmallQrPointEnd - SmallQrPointStart + 1, SmallQrPointEnd - SmallQrPointStart + 1, Vec3b(0, 128, 255)}
+	} };
 
 	bool isInsideSmallQrPoint(int row, int col)
 	{
-		const int center = FrameSize - SmallQrPointbias;
-		return std::abs(row - center) <= SmallQrPointRadius && std::abs(col - center) <= SmallQrPointRadius;
+		return row >= SmallQrPointStart && row <= SmallQrPointEnd
+			&& col >= SmallQrPointStart && col <= SmallQrPointEnd;
 	}
 
 	bool isInsideCornerQuietZone(int row, int col)
 	{
-		return row >= 130 || col >= 130;
+		return row >= (SmallQrPointEnd + 1) || col >= (SmallQrPointEnd + 1);
 	}
 
 	bool isInsideCornerSafetyZone(int row, int col)
 	{
-		const int center = FrameSize - SmallQrPointbias;
-		return std::abs(row - center) <= SmallQrPointRadius + 2 && std::abs(col - center) <= SmallQrPointRadius + 2;
+		const int safetyStart = SmallQrPointStart - 4;
+		const int safetyEnd = SmallQrPointEnd + 4;
+		return row >= safetyStart && row <= safetyEnd && col >= safetyStart && col <= safetyEnd;
 	}
 
 	void fillBinaryNoiseCell(Vec3b& cell)
@@ -355,19 +358,26 @@ namespace Code
 
 	void drawSmallQrPoint(Mat& mat)
 	{
-		const int center = FrameSize - SmallQrPointbias;
-		const Vec3b vec3bsmall[4] =
+		// Same 7x7 small finder pattern as main branch ([B,B,W,B]), scaled 2x per pixel to 14x14.
+		const Vec3b mainPattern[4] =
 		{
 			pixel[Black],
 			pixel[Black],
 			pixel[White],
-			pixel[Black],
+			pixel[Black]
 		};
-		for (int i = -SmallQrPointRadius; i <= SmallQrPointRadius; ++i)
+		for (int r = 0; r < 7; ++r)
 		{
-			for (int j = -SmallQrPointRadius; j <= SmallQrPointRadius; ++j)
+			for (int c = 0; c < 7; ++c)
 			{
-				mat.at<Vec3b>(center + i, center + j) = vec3bsmall[std::max(std::abs(i), std::abs(j))];
+				const int dist = std::max(std::abs(r - 3), std::abs(c - 3));
+				const Vec3b color = mainPattern[dist];
+				const int rr = SmallQrPointStart + r * 2;
+				const int cc = SmallQrPointStart + c * 2;
+				mat.at<Vec3b>(rr, cc) = color;
+				mat.at<Vec3b>(rr + 1, cc) = color;
+				mat.at<Vec3b>(rr, cc + 1) = color;
+				mat.at<Vec3b>(rr + 1, cc + 1) = color;
 			}
 		}
 	}
@@ -375,17 +385,19 @@ namespace Code
 	void BulidQrPoint(Mat& mat)
 	{
 		const std::array<std::array<int, 2>, 3> pointPos =
-		{{
+		{ {
 			{0, 0},
 			{0, FrameSize - QrPointSize},
 			{FrameSize - QrPointSize, 0}
-		}};
-		const Vec3b vec3bBig[11] =
+		} };
+		const Vec3b vec3bBig[22] =
 		{
 			pixel[Black], pixel[Black], pixel[Black], pixel[Black],
-			pixel[White], pixel[White],
-			pixel[Black], pixel[Black],
-			pixel[White], pixel[White], pixel[White]
+			pixel[Black], pixel[Black], pixel[Black], pixel[Black],
+			pixel[White], pixel[White], pixel[White], pixel[White],
+			pixel[Black], pixel[Black], pixel[Black], pixel[Black],
+			pixel[White], pixel[White], pixel[White], pixel[White],
+			pixel[White], pixel[White]
 		};
 		for (const auto& pos : pointPos)
 		{
@@ -438,23 +450,26 @@ namespace Code
 
 	void BulidFrameFlag(Mat& mat, FrameType frameType, int tailLen)
 	{
+		// Header layout in uint16_t:
+		// - bits [2:0]   : flags (3 bits)
+		// - bits [15:3]  : payload length (13 bits, up to 8191)
 		uint16_t headerValue = 0;
 		switch (frameType)
 		{
 		case FrameType::Start:
-			headerValue = 0b0011;
+			headerValue = 0b001;
 			break;
 		case FrameType::End:
-			headerValue = 0b1100;
+			headerValue = 0b010;
 			break;
 		case FrameType::StartAndEnd:
-			headerValue = 0b1111;
+			headerValue = 0b011;
 			break;
 		default:
 			headerValue = 0;
 			break;
 		}
-		headerValue |= static_cast<uint16_t>(tailLen) << 4;
+		headerValue |= static_cast<uint16_t>(tailLen) << 3;
 		writeHeaderField(mat, 0, headerValue);
 #ifdef Code_DEBUG
 		Show_Scale_Img(mat);
