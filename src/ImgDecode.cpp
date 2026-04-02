@@ -1,4 +1,4 @@
-﻿// This file implements decoding for the logical code frame.
+// This file implements decoding for the logical code frame.
 #include "ImgDecode.h"
 
 #include <algorithm>
@@ -48,10 +48,10 @@ namespace ImageDecode
 		bool valid;
 	};
 
-	constexpr int SmallQrPointRadius = 6; // 2× main-branch radius (3 × 2)
+	constexpr int SmallQrPointRadius = 6; // 2x main-branch radius (3 × 2)
 	constexpr int CornerReserveSize = 42;
-	constexpr int SmallQrPointStart = FrameSize - SmallQrPointbias - SmallQrPointRadius;     // 246
-	constexpr int SmallQrPointEnd = FrameSize - SmallQrPointbias + SmallQrPointRadius + 1;   // 259（严格 14x14）
+	constexpr int SmallQrPointStart = FrameSize - SmallQrPointbias - SmallQrPointRadius;
+	constexpr int SmallQrPointEnd = FrameSize - SmallQrPointbias + SmallQrPointRadius + 1;
 	constexpr int HeaderLeft = 42;
 	constexpr int HeaderTop = 6;
 	constexpr int HeaderFieldBits = 16;
@@ -59,16 +59,16 @@ namespace ImageDecode
 	constexpr int TopDataLeft = HeaderLeft + HeaderWidth;
 	constexpr int TopDataWidth = 166;
 	constexpr int DataAreaCount = 5;
-	constexpr int PaddingCellCount = 6;
+	constexpr int PaddingCellCount = 2;
 
 	const std::array<DataArea, DataAreaCount> kDataAreas =
-	{{
+	{ {
 		{6, 58, 3, 166, 0},
 		{9, 42, 33, 182, 0},
 		{42, 5, 179, 256, 0},
 		{221, 5, 3, 256, 0},
 		{224, 42, 37, 182, 0}
-	}};
+	} };
 
 	bool isWhiteCell(const Vec3b& cell)
 	{
@@ -82,7 +82,7 @@ namespace ImageDecode
 
 	bool isInsideCornerSafetyZone(int row, int col)
 	{
-		const int safetyStart = SmallQrPointStart - 4; // 严格对应 main 的 ±2 安全圈按 2× 放大
+		const int safetyStart = SmallQrPointStart - 4;
 		const int safetyEnd = SmallQrPointEnd + 4;
 		return row >= safetyStart && row <= safetyEnd && col >= safetyStart && col <= safetyEnd;
 	}
