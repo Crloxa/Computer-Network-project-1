@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <opencv2/opencv.hpp>
 
@@ -22,7 +22,7 @@ namespace ImageDecode
 		bool IsEnd;
 	};
 
-	constexpr int BytesPerFrame = 7613;
+	constexpr int BytesPerFrame = 7600;
 	constexpr int FrameSize = 266;
 	constexpr int FrameOutputRate = 10;
 	constexpr int SafeAreaWidth = 4;
